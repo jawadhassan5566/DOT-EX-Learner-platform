@@ -1,0 +1,155 @@
+{
+  "entities": {
+    "Meeting": {
+      "title": "Meeting",
+      "description": "Virtual classroom lecture or collaborative academic meeting",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 150 },
+        "description": { "type": "string", "maxLength": 500 },
+        "category": { "type": "string", "maxLength": 80 },
+        "hostId": { "type": "string", "maxLength": 128 },
+        "hostName": { "type": "string", "maxLength": 100 },
+        "scheduledDate": { "type": "string", "maxLength": 30 },
+        "startTime": { "type": "string", "maxLength": 20 },
+        "durationMinutes": { "type": "number" },
+        "status": { "type": "string", "enum": ["upcoming", "live", "completed", "cancelled"] },
+        "meetCode": { "type": "string", "maxLength": 20 },
+        "shareLink": { "type": "string", "maxLength": 300 },
+        "allowChat": { "type": "boolean" },
+        "allowWhiteboard": { "type": "boolean" },
+        "allowScreenShare": { "type": "boolean" },
+        "participantsCount": { "type": "number" },
+        "maxParticipants": { "type": "number" }
+      },
+      "required": ["title", "hostId", "hostName", "meetCode", "status"]
+    },
+    "Bookmark": {
+      "title": "Bookmark",
+      "description": "User bookmarked textbook or academic reading point",
+      "type": "object",
+      "properties": {
+        "bookId": { "type": "string", "maxLength": 128 },
+        "bookTitle": { "type": "string", "maxLength": 200 },
+        "pageNumber": { "type": "number" },
+        "note": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["bookId", "bookTitle", "pageNumber"]
+    },
+    "Transcription": {
+      "title": "Transcription",
+      "description": "Audio lecture transcription using gemini-3.5-transcribe",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "text": { "type": "string", "maxLength": 10000 },
+        "modelUsed": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["userId", "title", "text"]
+    },
+    "ReadingGoal": {
+      "title": "ReadingGoal",
+      "description": "Student daily or weekly book completion target and reading streak tracking",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "frequency": { "type": "string", "enum": ["daily", "weekly"] },
+        "targetCount": { "type": "number" },
+        "completedCount": { "type": "number" },
+        "targetPages": { "type": "number" },
+        "completedPages": { "type": "number" },
+        "currentStreakDays": { "type": "number" },
+        "status": { "type": "string", "enum": ["in_progress", "achieved"] },
+        "reminderEnabled": { "type": "boolean" },
+        "completedBookIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["userId", "frequency", "targetCount", "completedCount", "status"]
+    },
+    "Badge": {
+      "title": "Badge",
+      "description": "User virtual achievement badge for meeting reading goals and consistent study streaks",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "badgeCode": { "type": "string", "maxLength": 80 },
+        "title": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 300 },
+        "category": { "type": "string", "enum": ["goal", "streak", "academic", "special"] },
+        "tier": { "type": "string", "enum": ["bronze", "silver", "gold", "platinum", "diamond"] },
+        "xp": { "type": "number" },
+        "isUnlocked": { "type": "boolean" },
+        "unlockedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["userId", "badgeCode", "title", "tier", "isUnlocked"]
+    },
+    "Institute": {
+      "title": "Institute",
+      "description": "Educational institute or university organization entity",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 150 },
+        "code": { "type": "string", "maxLength": 50 },
+        "slug": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 500 },
+        "logo": { "type": "string", "maxLength": 500 },
+        "adminId": { "type": "string", "maxLength": 128 },
+        "adminName": { "type": "string", "maxLength": 100 },
+        "adminEmail": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "address": { "type": "string", "maxLength": 300 },
+        "website": { "type": "string", "maxLength": 300 },
+        "allowRegistration": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["name", "code", "adminName", "adminEmail", "status"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "Institutional notice targeted to specific institute students",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "type": { "type": "string", "enum": ["announcement", "system", "meeting", "book"] },
+        "targetGroup": { "type": "string", "enum": ["all", "students", "teachers", "admins"] },
+        "visibility": { "type": "string", "enum": ["institute", "global"] },
+        "isGlobal": { "type": "boolean" },
+        "instituteId": { "type": "string", "maxLength": 128 },
+        "instituteName": { "type": "string", "maxLength": 150 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["title", "message", "type"]
+    }
+  },
+  "firestore": {
+    "/institutes/{instituteId}": {
+      "schema": { "$ref": "#/entities/Institute" },
+      "description": "Academic institutes, universities, and polytechnic campuses"
+    },
+    "/announcements/{announcementId}": {
+      "schema": { "$ref": "#/entities/Announcement" },
+      "description": "Campus announcements scoped to specific institute student bodies"
+    },
+    "/meetings/{meetingId}": {
+      "schema": { "$ref": "#/entities/Meeting" },
+      "description": "Collection of academic meetings and classroom rooms"
+    },
+    "/users/{userId}/bookmarks/{bookmarkId}": {
+      "schema": { "$ref": "#/entities/Bookmark" },
+      "description": "User bookmarks and reading progress"
+    },
+    "/users/{userId}/reading_goals/{goalId}": {
+      "schema": { "$ref": "#/entities/ReadingGoal" },
+      "description": "Student daily or weekly reading goals and completion targets"
+    },
+    "/users/{userId}/badges/{badgeId}": {
+      "schema": { "$ref": "#/entities/Badge" },
+      "description": "Virtual achievement badges awarded for meeting reading goals and study streaks"
+    },
+    "/transcriptions/{transcriptionId}": {
+      "schema": { "$ref": "#/entities/Transcription" },
+      "description": "Transcriptions generated with Gemini"
+    }
+  }
+}

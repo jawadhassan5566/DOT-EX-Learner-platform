@@ -1,0 +1,6 @@
+{
+  "name": "Dot X Learner Platform",
+  "description": "Dot X Learner Platform - Modern & Scalable Digital Academic Platform for students, educators, and institutions with books, PDF reader, AI academic assistant, live meetings, and whiteboard.",
+  "requestFramePermissions": ["camera", "microphone", "display-capture"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
