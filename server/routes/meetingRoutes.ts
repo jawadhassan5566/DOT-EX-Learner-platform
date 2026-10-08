@@ -4,6 +4,7 @@
 import { Router, Response } from 'express';
 import { db, Meeting, MeetingMessage } from '../db.js';
 import { AuthenticatedRequest, requireAuth, requirePermission } from '../auth.js';
+import { activeScreenShares } from '../meetingSocket.js';
 
 const router = Router();
 
@@ -152,12 +153,14 @@ router.get('/code/:code', (req: AuthenticatedRequest, res: Response) => {
 
   const messages = db.meetingMessages.filter(mm => mm.meetingId === meeting.id);
   const whiteboardData = db.whiteboardStates[meeting.id] || null;
+  const activeScreenShare = activeScreenShares.get(meeting.id) || null;
 
   res.json({
     success: true,
     meeting,
     messages,
-    whiteboardData
+    whiteboardData,
+    activeScreenShare
   });
 });
 
@@ -168,12 +171,14 @@ router.get('/:id', (req: AuthenticatedRequest, res: Response) => {
 
   const messages = db.meetingMessages.filter(mm => mm.meetingId === meeting.id);
   const whiteboardData = db.whiteboardStates[meeting.id] || null;
+  const activeScreenShare = activeScreenShares.get(meeting.id) || null;
 
   res.json({
     success: true,
     meeting,
     messages,
-    whiteboardData
+    whiteboardData,
+    activeScreenShare
   });
 });
 

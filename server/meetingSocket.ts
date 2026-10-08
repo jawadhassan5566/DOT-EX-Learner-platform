@@ -1,7 +1,7 @@
 /**
  * Dot X Library - Real-Time Multi-User WebSocket Gateway for Virtual Classrooms
  * Handles instant real-time live chat, shared whiteboard synchronization,
- * and attendee presence for all connected meeting participants.
+ * WebRTC screen-sharing signaling, and attendee presence for all connected meeting participants.
  */
 import { WebSocketServer, WebSocket } from 'ws';
 import { db, MeetingMessage } from './db.js';
@@ -17,8 +17,23 @@ interface ClientSession {
   };
 }
 
+export interface ActiveScreenShare {
+  meetingId: string;
+  presenter: {
+    id: string;
+    name: string;
+    role: string;
+    avatar?: string;
+  };
+  startedAt: string;
+  streamMetadata?: any;
+}
+
 // Map of meetingId -> Set of client sessions
 const meetingRooms = new Map<string, Set<ClientSession>>();
+
+// Map of meetingId -> Active screen share state
+export const activeScreenShares = new Map<string, ActiveScreenShare>();
 
 export function setupMeetingWebSocket(wss: WebSocketServer) {
   wss.on('connection', (ws: WebSocket, req) => {
@@ -70,6 +85,7 @@ export function setupMeetingWebSocket(wss: WebSocketServer) {
             messages: existingMessages,
             whiteboardData: currentWhiteboard,
             isWhiteboardOpen,
+            activeScreenShare: activeScreenShares.get(meetingId) || null,
             participants: activeUsers,
             meeting
           }));
@@ -162,6 +178,99 @@ export function setupMeetingWebSocket(wss: WebSocketServer) {
             isSpeaking
           });
         }
+
+        // 7. Screen Sharing Start (Educator presents screen using WebRTC)
+        else if (type === 'screen_share_start') {
+          const { presenter, streamMetadata } = payload;
+          const shareData: ActiveScreenShare = {
+            meetingId,
+            presenter: presenter || currentSession?.user || { id: 'educator', name: 'Educator', role: 'teacher' },
+            startedAt: new Date().toISOString(),
+            streamMetadata: streamMetadata || { resolution: '1080p', fps: 60 }
+          };
+          activeScreenShares.set(meetingId, shareData);
+
+          // Update meeting model
+          const meeting = db.meetings.find(m => m.id === meetingId);
+          if (meeting) {
+            (meeting as any).isScreenSharing = true;
+            (meeting as any).screenSharePresenter = shareData.presenter;
+          }
+
+          // Broadcast to all participants in the room
+          broadcastToRoom(meetingId, {
+            type: 'screen_share_start',
+            meetingId,
+            presenter: shareData.presenter,
+            streamMetadata: shareData.streamMetadata
+          });
+        }
+
+        // 8. Screen Sharing Stop
+        else if (type === 'screen_share_stop') {
+          activeScreenShares.delete(meetingId);
+          const meeting = db.meetings.find(m => m.id === meetingId);
+          if (meeting) {
+            (meeting as any).isScreenSharing = false;
+            (meeting as any).screenSharePresenter = null;
+          }
+
+          broadcastToRoom(meetingId, {
+            type: 'screen_share_stop',
+            meetingId,
+            presenterId: payload.presenterId || currentSession?.user?.id
+          });
+        }
+
+        // 9. WebRTC Signaling: SDP Offer
+        else if (type === 'webrtc_offer') {
+          const { sdp, targetId, streamType } = payload;
+          broadcastToRoom(meetingId, {
+            type: 'webrtc_offer',
+            meetingId,
+            sdp,
+            streamType: streamType || 'screen',
+            senderId: currentSession?.user?.id,
+            targetId
+          }, ws);
+        }
+
+        // 10. WebRTC Signaling: SDP Answer
+        else if (type === 'webrtc_answer') {
+          const { sdp, targetId } = payload;
+          broadcastToRoom(meetingId, {
+            type: 'webrtc_answer',
+            meetingId,
+            sdp,
+            senderId: currentSession?.user?.id,
+            targetId
+          }, ws);
+        }
+
+        // 11. WebRTC Signaling: ICE Candidate
+        else if (type === 'webrtc_ice_candidate') {
+          const { candidate, targetId } = payload;
+          broadcastToRoom(meetingId, {
+            type: 'webrtc_ice_candidate',
+            meetingId,
+            candidate,
+            senderId: currentSession?.user?.id,
+            targetId
+          }, ws);
+        }
+
+        // 12. Real-time Screen Frame Sync (WebRTC mirror fallback)
+        else if (type === 'screen_frame') {
+          const { frameData } = payload;
+          if (frameData) {
+            broadcastToRoom(meetingId, {
+              type: 'screen_frame',
+              meetingId,
+              frameData,
+              senderId: currentSession?.user?.id
+            }, ws);
+          }
+        }
       } catch (err) {
         console.error('WebSocket message handling error:', err);
       }
@@ -187,6 +296,23 @@ function leaveRoom(session: ClientSession) {
   if (room) {
     room.delete(session);
     const activeUsers = Array.from(room).map(s => s.user);
+
+    // If departing user was presenting their screen, clean up screen share
+    const currentShare = activeScreenShares.get(session.meetingId);
+    if (currentShare && currentShare.presenter.id === session.user.id) {
+      activeScreenShares.delete(session.meetingId);
+      const meeting = db.meetings.find(m => m.id === session.meetingId);
+      if (meeting) {
+        (meeting as any).isScreenSharing = false;
+        (meeting as any).screenSharePresenter = null;
+      }
+      broadcastToRoom(session.meetingId, {
+        type: 'screen_share_stop',
+        meetingId: session.meetingId,
+        presenterId: session.user.id,
+        reason: 'presenter_disconnected'
+      });
+    }
 
     broadcastToRoom(session.meetingId, {
       type: 'user_left',

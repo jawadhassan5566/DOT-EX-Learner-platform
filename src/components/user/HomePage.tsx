@@ -196,7 +196,7 @@ export const HomePage: React.FC = () => {
           { label: 'Digital Library', desc: 'Browse all textbooks', icon: BookOpen, color: 'from-blue-600 to-indigo-600', action: () => navigateTo('library') },
           { label: 'Study Lectures', desc: 'Admin videos & pictures', icon: Video, color: 'from-indigo-600 to-sky-600', action: () => navigateTo('lectures'), badge: 'New' },
           { label: 'AI Flashcards', desc: 'Chapter study decks', icon: Brain, color: 'from-purple-600 to-indigo-600', action: () => navigateTo('flashcards'), badge: 'AI' },
-          { label: 'AI Assistant', desc: 'Ask academic tutor', icon: Bot, color: 'from-cyan-600 to-blue-600', action: () => navigateTo('ai-assistant'), badge: 'Smart' },
+          { label: 'Gemini Assistant', desc: 'Google Gemini 2.0 AI', icon: Sparkles, color: 'from-blue-600 via-indigo-600 to-rose-500', action: () => navigateTo('ai-assistant'), badge: 'Gemini' },
           { label: 'Focus Music', desc: 'Lyria study audio', icon: Music, color: 'from-pink-600 to-purple-600', action: () => navigateTo('music'), badge: 'Lyria' },
           { label: 'Live Meetings', desc: 'Join online classes', icon: Video, color: 'from-emerald-600 to-teal-600', action: () => navigateTo('meetings'), badge: 'Live' },
           { label: 'Whiteboard', desc: 'Collaborative canvas', icon: PenTool, color: 'from-indigo-600 to-purple-600', action: () => navigateTo('whiteboard') },
@@ -611,16 +611,16 @@ export const HomePage: React.FC = () => {
             Need help understanding complex academic concepts?
           </h3>
           <p className="text-sm text-slate-300 leading-relaxed">
-            Our AI Academic Assistant answers university-level queries, explains algorithmic complexity, derives mathematical proofs, and recommends reading chapters.
+            Experience Google Gemini's latest AI assistant variant: empathetic, friendly, and deeply reliable with multimodal camera homework solver, clear step-by-step proofs, and clean formatting.
           </p>
         </div>
 
         <button
           onClick={() => navigateTo('ai-assistant')}
-          className="px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-500/25 flex items-center space-x-2 transition-all"
+          className="px-6 py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-rose-600 hover:opacity-90 text-white font-bold text-sm rounded-xl shadow-lg shadow-blue-500/25 flex items-center space-x-2 transition-all"
         >
-          <Bot className="w-4 h-4" />
-          <span>Launch AI Assistant</span>
+          <Sparkles className="w-4 h-4" />
+          <span>Launch Gemini Assistant</span>
           <ArrowRight className="w-4 h-4" />
         </button>
       </section>

@@ -299,6 +299,13 @@ router.post('/:id/like', requireAuth, (req: AuthenticatedRequest, res: Response)
     return res.status(404).json({ success: false, error: "Lecture not found." });
   }
 
+  if (!Array.isArray(lecture.likedUserIds)) {
+    lecture.likedUserIds = [];
+  }
+  if (!Array.isArray(lecture.reactions)) {
+    lecture.reactions = [];
+  }
+
   const likedIndex = lecture.likedUserIds.indexOf(user.id);
   let isLiked = false;
 
@@ -306,17 +313,37 @@ router.post('/:id/like', requireAuth, (req: AuthenticatedRequest, res: Response)
     lecture.likedUserIds.push(user.id);
     lecture.likesCount += 1;
     isLiked = true;
+
+    // Record user in reactions so their name and profile preview are available
+    const rIdx = lecture.reactions.findIndex(r => r.userId === user.id);
+    if (rIdx === -1) {
+      lecture.reactions.push({
+        userId: user.id,
+        userName: user.name,
+        userAvatar: user.avatar,
+        userRole: user.role,
+        reactionType: 'like',
+        createdAt: new Date().toISOString()
+      });
+    }
   } else {
     lecture.likedUserIds.splice(likedIndex, 1);
     lecture.likesCount = Math.max(0, lecture.likesCount - 1);
     isLiked = false;
+
+    // Remove from reactions if it was 'like'
+    const rIdx = lecture.reactions.findIndex(r => r.userId === user.id && r.reactionType === 'like');
+    if (rIdx !== -1) {
+      lecture.reactions.splice(rIdx, 1);
+    }
   }
 
   res.json({
     success: true,
     isLiked,
     likesCount: lecture.likesCount,
-    likedUserIds: lecture.likedUserIds
+    likedUserIds: lecture.likedUserIds,
+    reactions: lecture.reactions
   });
 });
 

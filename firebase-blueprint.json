@@ -120,9 +120,47 @@
         "createdAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["title", "message", "type"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Private peer-to-peer conversation tracking participants and last message",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 256 },
+        "lastMessage": { "type": "string", "maxLength": 2000 },
+        "lastMessageTime": { "type": "string", "maxLength": 50 },
+        "lastSenderId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Private peer-to-peer chat message saved in Firestore",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string", "maxLength": 256 },
+        "senderId": { "type": "string", "maxLength": 128 },
+        "senderName": { "type": "string", "maxLength": 100 },
+        "senderAvatar": { "type": "string", "maxLength": 500 },
+        "receiverId": { "type": "string", "maxLength": 128 },
+        "receiverName": { "type": "string", "maxLength": 100 },
+        "text": { "type": "string", "maxLength": 5000 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["conversationId", "senderId", "receiverId", "text"]
     }
   },
   "firestore": {
+    "/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "Private direct conversations between users"
+    },
+    "/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "All private messages exchanged between users"
+    },
     "/institutes/{instituteId}": {
       "schema": { "$ref": "#/entities/Institute" },
       "description": "Academic institutes, universities, and polytechnic campuses"

@@ -31,6 +31,8 @@ import { ContactPage } from './components/user/ContactPage.js';
 import { AboutPage } from './components/user/AboutPage.js';
 import { ProfilePage } from './components/user/ProfilePage.js';
 import { SettingsPage } from './components/user/SettingsPage.js';
+import { JobProfilePage } from './components/user/JobProfilePage.js';
+import { PrivateChatDock } from './components/chat/PrivateChatDock.js';
 
 // Admin Components
 import { AdminLayout } from './components/admin/AdminLayout.js';
@@ -98,6 +100,9 @@ export function App() {
         return <ProfilePage />;
       case 'settings':
         return <SettingsPage />;
+      case 'job-profile':
+      case 'jobs':
+        return <JobProfilePage />;
 
       // Admin Pages
       case 'admin-dashboard':
@@ -214,7 +219,7 @@ export function App() {
       <Header />
 
       {/* Main Page Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-5">
+      <main className={`flex-1 w-full mx-auto ${currentPage === 'ai-assistant' ? 'max-w-6xl px-2 sm:px-4 pt-3 pb-6' : 'max-w-7xl px-4 sm:px-6 lg:px-8 pt-5'}`}>
         {renderCurrentView()}
       </main>
 
@@ -227,6 +232,7 @@ export function App() {
       {/* Interactive Global Elements */}
       <ToastContainer />
       <OfflineIndicator />
+      <PrivateChatDock />
       <AuthModal isOpen={authModalOpen} onClose={closeAuthModal} initialMode={authModalMode} />
     </div>
   );

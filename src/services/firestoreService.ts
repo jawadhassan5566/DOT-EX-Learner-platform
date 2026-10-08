@@ -84,6 +84,53 @@ export interface FirestoreMeeting {
   createdAt?: any;
 }
 
+export interface DirectParticipant {
+  id: string;
+  name: string;
+  avatar?: string;
+  role?: string;
+  email?: string;
+}
+
+export interface DirectConversation {
+  id: string;
+  participantIds: string[];
+  participants: DirectParticipant[];
+  lastMessage: string;
+  lastMessageTime: string;
+  lastMessageTimestamp?: number;
+  lastSenderId: string;
+  unreadCount?: number;
+  jobContext?: {
+    jobId?: string;
+    jobTitle?: string;
+    companyOrInstitute?: string;
+  };
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export interface DirectMessage {
+  id?: string;
+  conversationId: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  receiverId: string;
+  receiverName?: string;
+  text: string;
+  createdAt?: any;
+  timestamp?: number;
+  read?: boolean;
+}
+
+export const getConversationId = (userIdA: string, userIdB: string): string => {
+  const cleanA = String(userIdA || 'user_a').trim();
+  const cleanB = String(userIdB || 'user_b').trim();
+  const sorted = [cleanA, cleanB].sort();
+  return `conv_${sorted[0]}___${sorted[1]}`;
+};
+
 export const firestoreService = {
   // --- Meetings Management & Persistence ---
   async createMeeting(meeting: Omit<FirestoreMeeting, 'id' | 'createdAt'>) {
@@ -286,12 +333,29 @@ export const firestoreService = {
         department: user.department || 'General',
         instituteId: user.instituteId || '',
         instituteName: user.instituteName || '',
+        rollNumber: user.rollNumber || '',
         avatar: user.avatar || '',
+        bio: user.bio || '',
         status: user.status || 'active',
         updatedAt: serverTimestamp()
       }, { merge: true });
     } catch (err) {
       console.warn("Firestore saveUserProfile non-fatal:", err);
+    }
+  },
+
+  async getUserProfile(userId: string): Promise<any | null> {
+    if (!userId) return null;
+    try {
+      const docRef = doc(db, 'users', userId);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        return snap.data();
+      }
+      return null;
+    } catch (err) {
+      console.warn("Firestore getUserProfile fallback:", err);
+      return null;
     }
   },
 
@@ -485,6 +549,298 @@ export const firestoreService = {
       return snap.docs.map(d => ({ id: d.id, ...d.data() }));
     } catch (err) {
       console.warn("Firestore getLectures non-fatal:", err);
+      return [];
+    }
+  },
+
+  // --- AI Quiz Generator & Scoring Persistence ---
+  async saveGeneratedQuiz(quiz: any) {
+    if (!quiz || !quiz.id) return;
+    try {
+      const docRef = doc(db, 'quizzes', quiz.id);
+      await setDoc(docRef, {
+        ...quiz,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      return quiz.id;
+    } catch (err) {
+      console.warn("Firestore saveGeneratedQuiz non-fatal:", err);
+    }
+  },
+
+  async saveQuizAttempt(userId: string, attempt: any) {
+    if (!userId || !attempt) return;
+    try {
+      const attemptId = attempt.id || `qa_${Date.now()}`;
+      const docRef = doc(db, 'users', userId, 'quiz_attempts', attemptId);
+      await setDoc(docRef, {
+        ...attempt,
+        userId,
+        recordedAt: serverTimestamp()
+      }, { merge: true });
+      return attemptId;
+    } catch (err) {
+      console.warn("Firestore saveQuizAttempt non-fatal:", err);
+    }
+  },
+
+  async getUserQuizAttempts(userId: string): Promise<any[]> {
+    if (!userId) return [];
+    try {
+      const colRef = collection(db, 'users', userId, 'quiz_attempts');
+      const snap = await getDocs(colRef);
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    } catch (err) {
+      console.warn("Firestore getUserQuizAttempts non-fatal:", err);
+      return [];
+    }
+  },
+
+  // --- Real-Time Private Direct Messaging (Firestore Conversations & Messages) ---
+  async getOrCreateConversation(
+    userA: DirectParticipant,
+    userB: DirectParticipant,
+    jobContext?: { jobId?: string; jobTitle?: string; companyOrInstitute?: string }
+  ): Promise<DirectConversation> {
+    const convId = getConversationId(userA.id, userB.id);
+    const convRef = doc(db, 'conversations', convId);
+
+    try {
+      const snap = await getDoc(convRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          id: convId,
+          ...data,
+          participantIds: data.participantIds || [userA.id, userB.id],
+          participants: data.participants || [userA, userB],
+          lastMessage: data.lastMessage || '',
+          lastMessageTime: data.lastMessageTime || '',
+          lastSenderId: data.lastSenderId || '',
+          ...(jobContext ? { jobContext: { ...(data.jobContext || {}), ...jobContext } } : {})
+        } as DirectConversation;
+      }
+    } catch (err) {
+      console.warn("Firestore getDoc conversation error:", err);
+    }
+
+    const newConv: DirectConversation = {
+      id: convId,
+      participantIds: [userA.id, userB.id],
+      participants: [
+        {
+          id: userA.id,
+          name: userA.name || 'User',
+          avatar: userA.avatar || '',
+          role: userA.role || 'student',
+          email: userA.email || ''
+        },
+        {
+          id: userB.id,
+          name: userB.name || 'Job Owner',
+          avatar: userB.avatar || '',
+          role: userB.role || 'faculty',
+          email: userB.email || ''
+        }
+      ],
+      lastMessage: 'Conversation started',
+      lastMessageTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      lastMessageTimestamp: Date.now(),
+      lastSenderId: userA.id,
+      unreadCount: 0,
+      ...(jobContext ? { jobContext } : {})
+    };
+
+    try {
+      await setDoc(convRef, {
+        ...newConv,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } catch (err) {
+      console.warn("Firestore setDoc conversation error:", err);
+    }
+
+    return newConv;
+  },
+
+  async sendDirectMessage(params: {
+    conversationId: string;
+    sender: DirectParticipant;
+    receiver: DirectParticipant;
+    text: string;
+    jobContext?: { jobId?: string; jobTitle?: string; companyOrInstitute?: string };
+  }): Promise<string> {
+    const { conversationId, sender, receiver, text, jobContext } = params;
+    const timeFormatted = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timestamp = Date.now();
+
+    // 1. Add document to Firestore 'messages' collection
+    const messagesCol = collection(db, 'messages');
+    let messageId = `msg_${timestamp}_${Math.random().toString(36).substring(2, 7)}`;
+
+    try {
+      const addedDoc = await addDoc(messagesCol, {
+        conversationId,
+        senderId: sender.id,
+        senderName: sender.name,
+        senderAvatar: sender.avatar || '',
+        receiverId: receiver.id,
+        receiverName: receiver.name,
+        text,
+        timestamp,
+        read: false,
+        createdAt: serverTimestamp()
+      });
+      messageId = addedDoc.id;
+    } catch (err) {
+      console.warn("Firestore addDoc message error:", err);
+    }
+
+    // 2. Update Firestore 'conversations' collection
+    const convRef = doc(db, 'conversations', conversationId);
+    try {
+      await setDoc(convRef, {
+        id: conversationId,
+        participantIds: [sender.id, receiver.id],
+        participants: [sender, receiver],
+        lastMessage: text,
+        lastMessageTime: timeFormatted,
+        lastMessageTimestamp: timestamp,
+        lastSenderId: sender.id,
+        updatedAt: serverTimestamp(),
+        ...(jobContext ? { jobContext } : {})
+      }, { merge: true });
+    } catch (err) {
+      console.warn("Firestore update conversation error:", err);
+    }
+
+    return messageId;
+  },
+
+  subscribeToUserConversations(
+    userId: string,
+    callback: (conversations: DirectConversation[]) => void
+  ): () => void {
+    if (!userId) {
+      callback([]);
+      return () => {};
+    }
+
+    try {
+      const colRef = collection(db, 'conversations');
+      const q = query(colRef, where('participantIds', 'array-contains', userId));
+
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const convs = snapshot.docs.map(docSnap => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              ...data,
+              participantIds: data.participantIds || [],
+              participants: data.participants || [],
+              lastMessage: data.lastMessage || '',
+              lastMessageTime: data.lastMessageTime || '',
+              lastMessageTimestamp: data.lastMessageTimestamp || (data.updatedAt?.toMillis ? data.updatedAt.toMillis() : Date.now()),
+              lastSenderId: data.lastSenderId || ''
+            } as DirectConversation;
+          });
+
+          convs.sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0));
+          callback(convs);
+        },
+        (error) => {
+          console.warn("Firestore subscribeToUserConversations notice:", error);
+          this.getUserConversations(userId).then(callback).catch(() => callback([]));
+        }
+      );
+
+      return unsubscribe;
+    } catch (err) {
+      console.warn("Firestore subscribeToUserConversations error:", err);
+      this.getUserConversations(userId).then(callback).catch(() => callback([]));
+      return () => {};
+    }
+  },
+
+  subscribeToConversationMessages(
+    conversationId: string,
+    callback: (messages: DirectMessage[]) => void
+  ): () => void {
+    if (!conversationId) {
+      callback([]);
+      return () => {};
+    }
+
+    try {
+      const colRef = collection(db, 'messages');
+      const q = query(colRef, where('conversationId', '==', conversationId));
+
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const msgs = snapshot.docs.map(docSnap => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              conversationId: data.conversationId,
+              senderId: data.senderId,
+              senderName: data.senderName,
+              senderAvatar: data.senderAvatar || '',
+              receiverId: data.receiverId,
+              receiverName: data.receiverName || '',
+              text: data.text || '',
+              timestamp: data.timestamp || (data.createdAt?.toMillis ? data.createdAt.toMillis() : 0),
+              createdAt: data.createdAt,
+              read: data.read || false
+            } as DirectMessage;
+          });
+
+          msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+          callback(msgs);
+        },
+        (error) => {
+          console.warn("Firestore subscribeToConversationMessages notice:", error);
+          this.getConversationMessages(conversationId).then(callback).catch(() => callback([]));
+        }
+      );
+
+      return unsubscribe;
+    } catch (err) {
+      console.warn("Firestore subscribeToConversationMessages error:", err);
+      this.getConversationMessages(conversationId).then(callback).catch(() => callback([]));
+      return () => {};
+    }
+  },
+
+  async getUserConversations(userId: string): Promise<DirectConversation[]> {
+    if (!userId) return [];
+    try {
+      const colRef = collection(db, 'conversations');
+      const q = query(colRef, where('participantIds', 'array-contains', userId));
+      const snap = await getDocs(q);
+      const convs = snap.docs.map(d => ({ id: d.id, ...d.data() } as DirectConversation));
+      convs.sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0));
+      return convs;
+    } catch (err) {
+      console.warn("Firestore getUserConversations notice:", err);
+      return [];
+    }
+  },
+
+  async getConversationMessages(conversationId: string): Promise<DirectMessage[]> {
+    if (!conversationId) return [];
+    try {
+      const colRef = collection(db, 'messages');
+      const q = query(colRef, where('conversationId', '==', conversationId));
+      const snap = await getDocs(q);
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() } as DirectMessage));
+      msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+      return msgs;
+    } catch (err) {
+      console.warn("Firestore getConversationMessages notice:", err);
       return [];
     }
   }

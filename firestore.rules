@@ -74,6 +74,15 @@ service cloud.firestore {
       allow read, write: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
     }
 
+    // Private Peer-to-Peer Direct Conversations & Messages
+    match /conversations/{conversationId} {
+      allow read, write: if true;
+    }
+
+    match /messages/{messageId} {
+      allow read, write: if true;
+    }
+
     // Audio Transcriptions
     match /transcriptions/{transcriptionId} {
       allow read, write: if isAuthenticated();

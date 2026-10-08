@@ -30,13 +30,20 @@ import {
   Radio,
   Eye,
   Lock,
-  Layers
+  Layers,
+  ScreenShare,
+  Monitor,
+  MonitorPlay,
+  MonitorUp,
+  Presentation,
+  PictureInPicture2,
+  ZoomIn
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext.js';
 import { useAuth } from '../../context/AuthContext.js';
 import { api } from '../../services/api.js';
 import { firestoreService } from '../../services/firestoreService.js';
-import { Meeting, MeetingMessage } from '../../types/index.js';
+import { Meeting, MeetingMessage, ActiveScreenShare } from '../../types/index.js';
 import { ShareMeetingModal } from './ShareMeetingModal.js';
 
 type WhiteboardTool = 'pen' | 'highlighter' | 'eraser' | 'line' | 'rect' | 'circle';
@@ -55,6 +62,11 @@ export const MeetingRoomPage: React.FC = () => {
   const [micMuted, setMicMuted] = useState(false);
   const [videoOff, setVideoOff] = useState(false);
   const [screenSharing, setScreenSharing] = useState(false);
+  const [activeScreenShare, setActiveScreenShare] = useState<ActiveScreenShare | null>(null);
+  const [remoteScreenFrame, setRemoteScreenFrame] = useState<string | null>(null);
+  const [screenZoom, setScreenZoom] = useState<'fit' | '100' | '125' | '150'>('fit');
+  const [isStageFullscreen, setIsStageFullscreen] = useState<boolean>(false);
+  const [screenShareDuration, setScreenShareDuration] = useState<number>(0);
   const [handRaised, setHandRaised] = useState(false);
   const [mediaConnected, setMediaConnected] = useState(false);
   const [audioLevel, setAudioLevel] = useState<number>(35); // simulated active speaking dB level
@@ -63,6 +75,12 @@ export const MeetingRoomPage: React.FC = () => {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const hostVideoRef = useRef<HTMLVideoElement | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const screenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteScreenVideoRef = useRef<HTMLVideoElement | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const stageContainerRef = useRef<HTMLDivElement | null>(null);
+  const frameIntervalRef = useRef<any>(null);
 
   // UI View States: Chat Below & Whiteboard
   const [chatOpenBelow, setChatOpenBelow] = useState(true);
@@ -142,6 +160,96 @@ export const MeetingRoomPage: React.FC = () => {
     };
   }, [meeting?.hostId, user?.id]);
 
+  // WebRTC ICE Configuration with Public STUN servers
+  const rtcConfig: RTCConfiguration = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun.services.mozilla.com' }
+    ]
+  };
+
+  // Fullscreen event listener
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsStageFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
+
+  // Screen share duration counter
+  useEffect(() => {
+    let timer: any = null;
+    if (screenSharing || activeScreenShare) {
+      timer = setInterval(() => {
+        setScreenShareDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+      setScreenShareDuration(0);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [screenSharing, activeScreenShare]);
+
+  // Clean up screen sharing tracks and peer connection on unmount
+  useEffect(() => {
+    return () => {
+      if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+      }
+    };
+  }, []);
+
+  // WebRTC remote offer negotiation
+  const handleRemoteWebRtcOffer = useCallback(async (sdp: any, senderId: string) => {
+    try {
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+      }
+      const pc = new RTCPeerConnection(rtcConfig);
+      peerConnectionRef.current = pc;
+
+      pc.ontrack = (event) => {
+        if (remoteScreenVideoRef.current && event.streams[0]) {
+          remoteScreenVideoRef.current.srcObject = event.streams[0];
+          remoteScreenVideoRef.current.play().catch(() => {});
+        }
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'webrtc_ice_candidate',
+            meetingId: selectedMeetingId,
+            candidate: event.candidate,
+            targetId: senderId
+          }));
+        }
+      };
+
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'webrtc_answer',
+          meetingId: selectedMeetingId,
+          sdp: pc.localDescription,
+          targetId: senderId
+        }));
+      }
+    } catch (err) {
+      console.warn('WebRTC offer negotiation notice:', err);
+    }
+  }, [selectedMeetingId]);
+
   // 2. Real-Time WebSocket Connection & Polling Gateway
   useEffect(() => {
     if (!selectedMeetingId) return;
@@ -187,6 +295,56 @@ export const MeetingRoomPage: React.FC = () => {
             }
             if (data.isWhiteboardOpen !== undefined) {
               setWhiteboardActive(data.isWhiteboardOpen);
+            }
+            if (data.activeScreenShare) {
+              setActiveScreenShare(data.activeScreenShare);
+              if (data.activeScreenShare.presenter?.id === user?.id) {
+                setScreenSharing(true);
+              }
+            }
+          } else if (data.type === 'screen_share_start') {
+            setActiveScreenShare({
+              meetingId: data.meetingId || selectedMeetingId,
+              presenter: data.presenter,
+              startedAt: new Date().toISOString(),
+              streamMetadata: data.streamMetadata
+            });
+            setWhiteboardActive(false);
+            if (data.presenter?.id !== user?.id) {
+              addToast({
+                type: 'info',
+                title: 'Screen Presentation Started',
+                message: `${data.presenter?.name || 'Educator'} is now presenting their screen via WebRTC.`
+              });
+            }
+          } else if (data.type === 'screen_share_stop') {
+            setActiveScreenShare(null);
+            setRemoteScreenFrame(null);
+            if (remoteScreenVideoRef.current) {
+              remoteScreenVideoRef.current.srcObject = null;
+            }
+            if (data.presenterId !== user?.id) {
+              addToast({
+                type: 'info',
+                title: 'Screen Presentation Ended',
+                message: 'The educator has stopped sharing their screen.'
+              });
+            }
+          } else if (data.type === 'screen_frame') {
+            if (data.frameData && activeScreenShare?.presenter?.id !== user?.id) {
+              setRemoteScreenFrame(data.frameData);
+            }
+          } else if (data.type === 'webrtc_offer') {
+            if (data.senderId !== user?.id) {
+              handleRemoteWebRtcOffer(data.sdp, data.senderId);
+            }
+          } else if (data.type === 'webrtc_answer') {
+            if (data.senderId !== user?.id && peerConnectionRef.current) {
+              peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(data.sdp)).catch(e => console.warn('Answer error:', e));
+            }
+          } else if (data.type === 'webrtc_ice_candidate') {
+            if (data.senderId !== user?.id && peerConnectionRef.current && data.candidate) {
+              peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(data.candidate)).catch(e => console.warn('Candidate error:', e));
             }
           } else if (data.type === 'chat') {
             if (data.message) {
@@ -262,6 +420,14 @@ export const MeetingRoomPage: React.FC = () => {
             setWhiteboardActive(res.meeting.isWhiteboardOpen);
           }
 
+          if (res.activeScreenShare !== undefined) {
+            if (res.activeScreenShare && !activeScreenShare) {
+              setActiveScreenShare(res.activeScreenShare);
+            } else if (!res.activeScreenShare && activeScreenShare && activeScreenShare.presenter?.id !== user?.id) {
+              setActiveScreenShare(null);
+            }
+          }
+
           if (res.messages && Array.isArray(res.messages)) {
             setMessages(prev => {
               if (prev.length !== res.messages.length) {
@@ -300,7 +466,7 @@ export const MeetingRoomPage: React.FC = () => {
       }
       wsRef.current = null;
     };
-  }, [selectedMeetingId, chatOpenBelow, user?.id, user?.name, user?.role]);
+  }, [selectedMeetingId, chatOpenBelow, user?.id, user?.name, user?.role, handleRemoteWebRtcOffer]);
 
   // Scroll chat to bottom when new messages arrive
   useEffect(() => {
@@ -308,6 +474,228 @@ export const MeetingRoomPage: React.FC = () => {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, chatOpenBelow]);
+
+  // Start screen sharing via WebRTC getDisplayMedia API
+  const handleStartScreenShare = async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        addToast({
+          type: 'error',
+          title: 'Not Supported',
+          message: 'Screen sharing is not supported by your current browser.'
+        });
+        return;
+      }
+
+      // 1. Capture display media stream using WebRTC getDisplayMedia
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          cursor: 'always',
+          displaySurface: 'monitor'
+        } as any,
+        audio: true
+      });
+
+      screenStreamRef.current = stream;
+      setScreenSharing(true);
+      setWhiteboardActive(false);
+
+      const presenterInfo = {
+        id: user?.id || 'educator_' + Math.random().toString(36).substring(2, 6),
+        name: user?.name || 'Educator',
+        role: user?.role || 'teacher',
+        avatar: user?.avatar
+      };
+
+      const shareState: ActiveScreenShare = {
+        meetingId: selectedMeetingId!,
+        presenter: presenterInfo,
+        startedAt: new Date().toISOString(),
+        streamMetadata: { resolution: '1080p', fps: 60 }
+      };
+      setActiveScreenShare(shareState);
+
+      // Attach to local preview video element
+      if (screenVideoRef.current) {
+        screenVideoRef.current.srcObject = stream;
+        screenVideoRef.current.play().catch(() => {});
+      }
+
+      // 2. Listen to native stop event when user clicks "Stop sharing" on system bar
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          handleStopScreenShare();
+        };
+      }
+
+      // 3. Broadcast start over WebSocket to all participants
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({
+          type: 'screen_share_start',
+          meetingId: selectedMeetingId,
+          presenter: presenterInfo,
+          streamMetadata: { resolution: '1080p', fps: 60 }
+        }));
+      }
+
+      // 4. Initialize WebRTC PeerConnection for P2P streaming
+      try {
+        const pc = new RTCPeerConnection(rtcConfig);
+        peerConnectionRef.current = pc;
+
+        stream.getTracks().forEach(track => {
+          pc.addTrack(track, stream);
+        });
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+              type: 'webrtc_ice_candidate',
+              meetingId: selectedMeetingId,
+              candidate: event.candidate
+            }));
+          }
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            type: 'webrtc_offer',
+            meetingId: selectedMeetingId,
+            sdp: pc.localDescription,
+            streamType: 'screen'
+          }));
+        }
+      } catch (rtcErr) {
+        console.warn('WebRTC peer connection setup notice:', rtcErr);
+      }
+
+      // 5. Dual-channel canvas fallback mirror for sandboxed iframe compatibility
+      const mirrorVideo = document.createElement('video');
+      mirrorVideo.srcObject = stream;
+      mirrorVideo.muted = true;
+      mirrorVideo.play().catch(() => {});
+
+      const mirrorCanvas = document.createElement('canvas');
+      const mirrorCtx = mirrorCanvas.getContext('2d');
+
+      if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
+      frameIntervalRef.current = setInterval(() => {
+        if (!screenStreamRef.current || !videoTrack || !videoTrack.enabled) return;
+        try {
+          if (mirrorVideo.videoWidth && mirrorVideo.videoHeight && mirrorCtx) {
+            const w = Math.min(960, mirrorVideo.videoWidth);
+            const h = Math.floor((w / mirrorVideo.videoWidth) * mirrorVideo.videoHeight);
+            mirrorCanvas.width = w;
+            mirrorCanvas.height = h;
+            mirrorCtx.drawImage(mirrorVideo, 0, 0, w, h);
+            const frameJpeg = mirrorCanvas.toDataURL('image/jpeg', 0.65);
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({
+                type: 'screen_frame',
+                meetingId: selectedMeetingId,
+                frameData: frameJpeg
+              }));
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      }, 150);
+
+      addToast({
+        type: 'success',
+        title: 'Screen Presentation Active',
+        message: 'Your screen is now streaming live to all attendees via WebRTC.'
+      });
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError') {
+        console.info('Screen share picker dismissed by user');
+      } else {
+        console.error('Failed to start screen share:', err);
+        addToast({
+          type: 'error',
+          title: 'Screen Share Error',
+          message: err.message || 'Could not start screen presentation.'
+        });
+      }
+    }
+  };
+
+  // Stop screen sharing
+  const handleStopScreenShare = () => {
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current);
+      frameIntervalRef.current = null;
+    }
+
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+      });
+      screenStreamRef.current = null;
+    }
+
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+
+    setScreenSharing(false);
+    setActiveScreenShare(null);
+    setRemoteScreenFrame(null);
+
+    // Notify WebSocket
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: 'screen_share_stop',
+        meetingId: selectedMeetingId,
+        presenterId: user?.id
+      }));
+    }
+
+    addToast({
+      type: 'info',
+      title: 'Screen Sharing Ended',
+      message: 'Switched back to standard classroom video view.'
+    });
+  };
+
+  const handleToggleFullscreen = () => {
+    if (!stageContainerRef.current) return;
+    if (!document.fullscreenElement) {
+      stageContainerRef.current.requestFullscreen().catch(() => {});
+      setIsStageFullscreen(true);
+    } else {
+      document.exitFullscreen().catch(() => {});
+      setIsStageFullscreen(false);
+    }
+  };
+
+  const handleTogglePiP = async () => {
+    try {
+      const isMe = activeScreenShare?.presenter?.id === user?.id;
+      const vid = isMe ? screenVideoRef.current : remoteScreenVideoRef.current;
+      if (vid) {
+        if (document.pictureInPictureElement) {
+          await document.exitPictureInPicture();
+        } else if (vid.requestPictureInPicture) {
+          await vid.requestPictureInPicture();
+        }
+      }
+    } catch (pipErr) {
+      console.warn('PiP notice:', pipErr);
+    }
+  };
+
+  const formatDuration = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
 
   // 3. Hardware Mute/Unmute Toggles
   const handleToggleMic = () => {
@@ -676,8 +1064,11 @@ export const MeetingRoomPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. Main Stage (Host Live Video Stream OR Shared Whiteboard) */}
-      <div className="relative rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden shadow-2xl min-h-[460px] flex flex-col justify-between">
+      {/* 2. Main Stage (Host Live Video Stream OR Shared Whiteboard OR Live Screen Share) */}
+      <div
+        ref={stageContainerRef}
+        className="relative rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden shadow-2xl min-h-[460px] flex flex-col justify-between"
+      >
         {/* Stage Content */}
         <div className="relative flex-1 w-full min-h-[420px] flex items-center justify-center bg-slate-950">
           {whiteboardActive ? (
@@ -792,6 +1183,151 @@ export const MeetingRoomPage: React.FC = () => {
                   onMouseUp={handleWbMouseUp}
                   className="w-full h-full block"
                 />
+              </div>
+            </div>
+          ) : activeScreenShare ? (
+            /* LIVE WEBRTC SCREEN PRESENTATION MODE */
+            <div className="w-full h-full min-h-[480px] flex flex-col bg-slate-950 relative">
+              {/* Presentation Top Control Banner */}
+              <div className="p-3 bg-slate-900/95 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs z-20 backdrop-blur-md">
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2 bg-cyan-500/20 text-cyan-300 px-3 py-1.5 rounded-xl border border-cyan-500/40 font-bold text-xs">
+                    <ScreenShare className="w-4 h-4 text-cyan-400 animate-pulse" />
+                    <span>
+                      {activeScreenShare.presenter.id === user?.id
+                        ? 'You are presenting your screen'
+                        : `${activeScreenShare.presenter.name} is presenting`}
+                    </span>
+                  </div>
+
+                  <div className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-300 font-mono text-[11px] border border-rose-500/30">
+                    <span className="w-2 h-2 rounded-full bg-rose-400 animate-ping"></span>
+                    <span>LIVE WebRTC • {formatDuration(screenShareDuration)}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  {/* Zoom Control */}
+                  <div className="flex items-center space-x-1.5 bg-slate-950 px-2.5 py-1.5 rounded-xl border border-slate-800 text-[11px] text-slate-300">
+                    <ZoomIn className="w-3.5 h-3.5 text-slate-400" />
+                    <select
+                      value={screenZoom}
+                      onChange={(e) => setScreenZoom(e.target.value as any)}
+                      className="bg-transparent text-white font-medium focus:outline-none cursor-pointer"
+                    >
+                      <option value="fit" className="bg-slate-900">Fit View</option>
+                      <option value="100" className="bg-slate-900">100%</option>
+                      <option value="125" className="bg-slate-900">125%</option>
+                      <option value="150" className="bg-slate-900">150%</option>
+                    </select>
+                  </div>
+
+                  {/* PiP Button */}
+                  <button
+                    onClick={handleTogglePiP}
+                    className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                    title="Pop out in Picture-in-Picture window"
+                  >
+                    <PictureInPicture2 className="w-4 h-4" />
+                  </button>
+
+                  {/* Fullscreen Button */}
+                  <button
+                    onClick={handleToggleFullscreen}
+                    className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                    title={isStageFullscreen ? "Exit Fullscreen" : "Fullscreen Presentation"}
+                  >
+                    {isStageFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  </button>
+
+                  {/* Stop Sharing Button (for Presenter) */}
+                  {activeScreenShare.presenter.id === user?.id && (
+                    <button
+                      onClick={handleStopScreenShare}
+                      className="px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold text-xs flex items-center space-x-1.5 shadow-md shadow-rose-600/30 transition-all cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Stop Presenting</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Screen Video Stage Canvas */}
+              <div className="flex-1 w-full min-h-[440px] relative overflow-auto flex items-center justify-center p-3 bg-slate-950">
+                {activeScreenShare.presenter.id === user?.id ? (
+                  /* Local Presenter Screen Preview */
+                  <div
+                    className="w-full h-full flex items-center justify-center transition-all duration-200"
+                    style={{
+                      transform: screenZoom === '100' ? 'scale(1)' : screenZoom === '125' ? 'scale(1.25)' : screenZoom === '150' ? 'scale(1.5)' : 'none',
+                      transformOrigin: 'top center'
+                    }}
+                  >
+                    <video
+                      ref={screenVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="max-h-[500px] w-auto max-w-full rounded-2xl object-contain shadow-2xl border border-slate-800 bg-black"
+                    />
+                  </div>
+                ) : (
+                  /* Attendee View of Remote Educator's Screen */
+                  <div
+                    className="w-full h-full flex items-center justify-center transition-all duration-200"
+                    style={{
+                      transform: screenZoom === '100' ? 'scale(1)' : screenZoom === '125' ? 'scale(1.25)' : screenZoom === '150' ? 'scale(1.5)' : 'none',
+                      transformOrigin: 'top center'
+                    }}
+                  >
+                    {remoteScreenFrame ? (
+                      <img
+                        src={remoteScreenFrame}
+                        alt="Shared Screen"
+                        className="max-h-[500px] w-auto max-w-full rounded-2xl object-contain shadow-2xl border border-slate-800"
+                      />
+                    ) : (
+                      <video
+                        ref={remoteScreenVideoRef}
+                        autoPlay
+                        playsInline
+                        className="max-h-[500px] w-auto max-w-full rounded-2xl object-contain shadow-2xl border border-slate-800 bg-black"
+                      />
+                    )}
+                  </div>
+                )}
+
+                {/* Floating PiP of Educator / Presenter Video in Corner */}
+                <div className="absolute bottom-4 right-4 z-20 w-40 sm:w-48 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-2xl p-2.5 flex items-center space-x-2.5">
+                  <div className="relative shrink-0">
+                    <img
+                      src={activeScreenShare.presenter.avatar || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80'}
+                      alt={activeScreenShare.presenter.name}
+                      className="w-10 h-10 rounded-full object-cover border-2 border-cyan-400 shadow"
+                    />
+                    <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-900 animate-pulse"></span>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-bold text-white truncate">{activeScreenShare.presenter.name}</p>
+                    <p className="text-[9px] text-cyan-300 font-medium truncate">Educator (Speaking)</p>
+                    {/* Live mini audio bars */}
+                    <div className="flex items-center space-x-0.5 mt-1">
+                      {[30, 70, 50, 90, 40].map((h, i) => (
+                        <div
+                          key={i}
+                          className="w-1 bg-cyan-400 rounded-full transition-all duration-150"
+                          style={{ height: `${Math.max(3, (h * audioLevel) / 90)}px` }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="absolute bottom-4 left-4 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-xl border border-slate-800 text-[11px] text-slate-300 flex items-center space-x-2 z-10">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                  <span>WebRTC Ultra-Low Latency Presentation Stream</span>
+                </div>
               </div>
             </div>
           ) : (
@@ -960,8 +1496,38 @@ export const MeetingRoomPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Center: Collaboration Controls (Whiteboard Button & Chat Button) */}
+        {/* Center: Collaboration Controls (Screen Share, Whiteboard Button & Chat Button) */}
         <div className="flex items-center space-x-2.5">
+          {/* WebRTC Screen Share Button for live academic presentations */}
+          {screenSharing ? (
+            <button
+              onClick={handleStopScreenShare}
+              className="px-4 py-2.5 rounded-xl font-bold text-xs flex items-center space-x-2 bg-cyan-500 text-slate-950 shadow-lg shadow-cyan-500/30 ring-2 ring-cyan-300 transition-all cursor-pointer animate-pulse"
+              title="Stop presenting your screen to the class"
+            >
+              <ScreenShare className="w-4 h-4" />
+              <span>Stop Sharing</span>
+            </button>
+          ) : activeScreenShare ? (
+            <button
+              onClick={() => setWhiteboardActive(false)}
+              className="px-4 py-2.5 rounded-xl font-bold text-xs flex items-center space-x-2 bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-md transition-all cursor-pointer"
+              title={`Viewing ${activeScreenShare.presenter.name}'s shared screen`}
+            >
+              <Presentation className="w-4 h-4 text-cyan-400 animate-pulse" />
+              <span>Viewing Screen</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleStartScreenShare}
+              className="px-4 py-2.5 rounded-xl font-bold text-xs flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 hover:border-cyan-500/40 transition-all shadow-md cursor-pointer group"
+              title="Present your screen via WebRTC to all attendees during this session"
+            >
+              <ScreenShare className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
+              <span>Share Screen</span>
+            </button>
+          )}
+
           {/* Whiteboard Button: Opens whiteboard visible to everyone */}
           <button
             onClick={handleToggleWhiteboard}

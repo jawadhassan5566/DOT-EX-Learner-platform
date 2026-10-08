@@ -73,6 +73,53 @@ export interface FlashcardDeck {
   masteryPercentage?: number;
 }
 
+export interface QuizQuestion {
+  id: string;
+  question: string;
+  options: string[]; // 4 multiple-choice options
+  correctAnswerIndex: number; // 0-indexed: 0, 1, 2, or 3
+  explanation: string;
+  category?: string;
+  difficulty?: 'easy' | 'medium' | 'hard';
+}
+
+export interface Quiz {
+  id: string;
+  bookId: string;
+  bookTitle: string;
+  bookCover?: string;
+  chapterTitle: string;
+  chapterIndex?: number;
+  userId?: string;
+  questions: QuizQuestion[]; // 5 questions
+  totalQuestions: number;
+  modelUsed?: string;
+  createdAt: string;
+}
+
+export interface QuizAttempt {
+  id: string;
+  quizId: string;
+  bookId: string;
+  bookTitle: string;
+  chapterTitle: string;
+  chapterIndex?: number;
+  userId: string;
+  userName?: string;
+  userRole?: string;
+  answers: Record<string, number>; // questionId -> selectedOptionIndex
+  score: number; // Number of correct answers (0 - 5)
+  totalQuestions: number; // 5
+  percentage: number; // (score / totalQuestions) * 100
+  grade: string; // 'A+', 'A', 'B', 'C', 'F'
+  masteryLevel: 'Distinction' | 'Proficient' | 'Needs Review';
+  timeSpentSeconds: number;
+  strengths: string[];
+  reviewAreas: string[];
+  completedAt: string;
+  xpEarned: number;
+}
+
 export interface Permission {
   code: string;
   name: string;
@@ -242,6 +289,25 @@ export interface Meeting {
   participantsCount: number;
   maxParticipants: number;
   isWhiteboardOpen?: boolean;
+  isScreenSharing?: boolean;
+  screenSharePresenter?: {
+    id: string;
+    name: string;
+    role: string;
+    avatar?: string;
+  } | null;
+}
+
+export interface ActiveScreenShare {
+  meetingId: string;
+  presenter: {
+    id: string;
+    name: string;
+    role: string;
+    avatar?: string;
+  };
+  startedAt: string;
+  streamMetadata?: any;
 }
 
 export interface MeetingAttendance {

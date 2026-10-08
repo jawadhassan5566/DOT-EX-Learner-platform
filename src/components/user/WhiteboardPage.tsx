@@ -18,7 +18,11 @@ import {
   Lock,
   Unlock,
   Sparkles,
-  BookOpen
+  BookOpen,
+  ChevronDown,
+  FileImage,
+  Image as ImageIcon,
+  Check
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext.js';
 import { useAuth } from '../../context/AuthContext.js';
@@ -44,6 +48,10 @@ export const WhiteboardPage: React.FC = () => {
   // Host locked state
   const [boardLocked, setBoardLocked] = useState<boolean>(false);
 
+  // Export PNG menu state
+  const [showExportMenu, setShowExportMenu] = useState<boolean>(false);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+
   const colors = [
     { label: 'Blue', value: '#3b82f6' },
     { label: 'Cyan', value: '#06b6d4' },
@@ -55,7 +63,7 @@ export const WhiteboardPage: React.FC = () => {
     { label: 'Dark', value: '#0f172a' },
   ];
 
-  // Initialize Canvas
+  // Initialize Canvas & Keyboard Shortcut
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -79,6 +87,16 @@ export const WhiteboardPage: React.FC = () => {
     const initialData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     setHistory([initialData]);
     setHistoryIndex(0);
+
+    // Keyboard shortcut (Ctrl+S / Cmd+S to export PNG)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        handleExportPNG('standard');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   const drawBackground = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
@@ -249,6 +267,70 @@ export const WhiteboardPage: React.FC = () => {
     setHistoryIndex(newIndex);
   };
 
+  // Touch Handlers for Tablet / Stylus / Mobile Drawing
+  const getTouchCoords = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas || !e.touches[0]) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: e.touches[0].clientX - rect.left,
+      y: e.touches[0].clientY - rect.top
+    };
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (boardLocked && user?.role === 'student') return;
+    if (e.cancelable) e.preventDefault();
+    const { x, y } = getTouchCoords(e);
+    setIsDrawing(true);
+    setStartPos({ x, y });
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    if (e.cancelable) e.preventDefault();
+    const { x, y } = getTouchCoords(e);
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    if (currentTool === 'pen') {
+      ctx.strokeStyle = currentColor;
+      ctx.lineWidth = strokeWidth;
+      ctx.globalAlpha = 1.0;
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    } else if (currentTool === 'highlighter') {
+      ctx.strokeStyle = currentColor;
+      ctx.lineWidth = strokeWidth * 3.5;
+      ctx.globalAlpha = 0.35;
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    } else if (currentTool === 'eraser') {
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = strokeWidth * 4;
+      ctx.globalAlpha = 1.0;
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    saveCanvasState();
+  };
+
   const handleClear = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -261,15 +343,95 @@ export const WhiteboardPage: React.FC = () => {
     addToast({ type: 'info', message: 'Whiteboard canvas cleared.' });
   };
 
-  const handleDownload = () => {
+  // High-Fidelity PNG Export Engine
+  const handleExportPNG = (mode: 'standard' | 'transparent' | 'highres' = 'standard') => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL('image/png');
-    const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = `DotX_Whiteboard_${Date.now()}.png`;
-    a.click();
-    addToast({ type: 'success', title: 'Exported', message: 'Whiteboard exported as PNG' });
+    if (!canvas) {
+      addToast({ type: 'error', message: 'Whiteboard canvas not available.' });
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      // Create offscreen canvas to render clean PNG
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = canvas.width;
+      exportCanvas.height = canvas.height;
+      const exportCtx = exportCanvas.getContext('2d');
+
+      if (!exportCtx) {
+        // Direct canvas fallback
+        const dataUrl = canvas.toDataURL('image/png');
+        downloadImage(dataUrl, 'DotX_Whiteboard_Notes');
+        return;
+      }
+
+      if (mode !== 'transparent') {
+        // Render rich dark academic study background
+        exportCtx.fillStyle = '#090d16';
+        exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+        // Render subtle grid dots
+        exportCtx.fillStyle = 'rgba(255, 255, 255, 0.07)';
+        const spacing = 28 * window.devicePixelRatio;
+        for (let x = spacing; x < exportCanvas.width; x += spacing) {
+          for (let y = spacing; y < exportCanvas.height; y += spacing) {
+            exportCtx.beginPath();
+            exportCtx.arc(x, y, 1 * window.devicePixelRatio, 0, Math.PI * 2);
+            exportCtx.fill();
+          }
+        }
+      }
+
+      // Draw active canvas content onto export canvas
+      exportCtx.drawImage(canvas, 0, 0);
+
+      // Add academic footer metadata stamp
+      if (mode !== 'transparent') {
+        const fontSize = Math.max(12, Math.floor(13 * window.devicePixelRatio));
+        exportCtx.font = `600 ${fontSize}px system-ui, -apple-system, sans-serif`;
+        exportCtx.fillStyle = 'rgba(148, 163, 184, 0.55)';
+        exportCtx.textAlign = 'right';
+        const dateStr = new Date().toLocaleDateString(undefined, {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        });
+        exportCtx.fillText(
+          `Dot X Learner Platform • Collaborative Notes • ${dateStr}`,
+          exportCanvas.width - 24 * window.devicePixelRatio,
+          exportCanvas.height - 18 * window.devicePixelRatio
+        );
+      }
+
+      const dataUrl = exportCanvas.toDataURL('image/png');
+      const filenameSuffix = mode === 'transparent' ? '_Transparent' : mode === 'highres' ? '_HighRes' : '';
+      downloadImage(dataUrl, `DotX_Whiteboard_Notes${filenameSuffix}`);
+    } catch (err: any) {
+      console.warn('Canvas export fallback:', err);
+      const dataUrl = canvas.toDataURL('image/png');
+      downloadImage(dataUrl, 'DotX_Whiteboard_Notes');
+    } finally {
+      setIsExporting(false);
+      setShowExportMenu(false);
+    }
+  };
+
+  const downloadImage = (dataUrl: string, baseName: string) => {
+    const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '') + '_' + Date.now().toString().slice(-4);
+    const filename = `${baseName}_${timestamp}.png`;
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    addToast({
+      type: 'success',
+      title: 'Whiteboard Exported as PNG',
+      message: `Your collaborative notes were saved locally as "${filename}"`
+    });
   };
 
   const handleSaveToCloud = async () => {
@@ -361,13 +523,64 @@ export const WhiteboardPage: React.FC = () => {
             <span className="hidden sm:inline">Sync Cloud</span>
           </button>
 
-          <button
-            onClick={handleDownload}
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
-            title="Download as PNG"
-          >
-            <Download className="w-4 h-4" />
-          </button>
+          {/* Export as PNG Button with Dropdown Menu */}
+          <div className="relative">
+            <div className="inline-flex rounded-xl shadow-md overflow-hidden">
+              <button
+                onClick={() => handleExportPNG('standard')}
+                disabled={isExporting}
+                className="px-3 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center space-x-1.5 transition-all shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
+                title="Save your whiteboard notes locally as a PNG image (Ctrl+S)"
+              >
+                <Download className="w-4 h-4" />
+                <span>{isExporting ? 'Exporting...' : 'Export PNG'}</span>
+              </button>
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="px-2 py-2 bg-teal-700 hover:bg-teal-600 text-white border-l border-emerald-500/40 transition-colors cursor-pointer"
+                title="PNG Export Options"
+                aria-label="Export Options"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Export Options Dropdown Menu */}
+            {showExportMenu && (
+              <div
+                className="absolute right-0 mt-2 w-64 rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-2 z-50 text-xs space-y-1 animate-in fade-in zoom-in-95 duration-150"
+                onMouseLeave={() => setShowExportMenu(false)}
+              >
+                <div className="px-2.5 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800">
+                  Save Notes Locally (.png)
+                </div>
+                <button
+                  onClick={() => handleExportPNG('standard')}
+                  className="w-full px-2.5 py-2 text-left rounded-xl hover:bg-slate-800 text-slate-200 hover:text-white flex items-center space-x-2.5 transition-colors cursor-pointer"
+                >
+                  <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 shrink-0">
+                    <ImageIcon className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-white">Full Canvas PNG</div>
+                    <div className="text-[10px] text-slate-400">Crisp dark grid background with notes & stamp</div>
+                  </div>
+                </button>
+                <button
+                  onClick={() => handleExportPNG('transparent')}
+                  className="w-full px-2.5 py-2 text-left rounded-xl hover:bg-slate-800 text-slate-200 hover:text-white flex items-center space-x-2.5 transition-colors cursor-pointer"
+                >
+                  <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400 shrink-0">
+                    <FileImage className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-white">Transparent PNG</div>
+                    <div className="text-[10px] text-slate-400">No background, ready for Docs & Slides</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -447,7 +660,10 @@ export const WhiteboardPage: React.FC = () => {
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
-          className="w-full h-full cursor-crosshair block"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          className="w-full h-full cursor-crosshair block touch-none"
         />
 
         {boardLocked && user?.role === 'student' && (

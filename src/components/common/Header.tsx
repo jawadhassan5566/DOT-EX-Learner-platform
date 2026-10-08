@@ -27,7 +27,8 @@ import {
   Building2,
   Check,
   Target,
-  UserPlus
+  UserPlus,
+  Briefcase
 } from 'lucide-react';
 import { DotXLogo } from './DotXLogo.js';
 import { PWAInstallButton } from './PWAInstallButton.js';
@@ -73,11 +74,12 @@ export const Header: React.FC = () => {
   const navItems = [
     { id: 'library', label: 'Digital Library', icon: BookOpen },
     { id: 'lectures', label: 'Study Lectures', icon: Video, badge: 'New' },
-    { id: 'ai-assistant', label: 'AI Assistant', icon: Bot, highlight: true },
+    { id: 'ai-assistant', label: 'Gemini Assistant', icon: Sparkles, highlight: true },
     { id: 'flashcards', label: 'AI Flashcards', icon: Sparkles, badge: 'AI' },
     { id: 'music', label: 'AI Music', icon: Music },
     { id: 'meetings', label: 'Online Meetings', icon: Video, badge: 'Live' },
     { id: 'whiteboard', label: 'Whiteboard', icon: PenTool },
+    { id: 'job-profile', label: 'Job Profiles', icon: Briefcase, badge: 'Jobs' },
     { id: 'chat', label: 'Chat System', icon: MessageSquare },
     { id: 'about', label: 'About', icon: Info },
     { id: 'contact', label: 'Contact', icon: PhoneCall },

@@ -1,34 +1,36 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Bot,
   Send,
   Plus,
   Trash2,
   Copy,
   Check,
   Sparkles,
-  BookOpen,
   ChevronRight,
   Mic,
   MicOff,
   Globe,
-  Radio,
   Volume2,
   VolumeX,
-  PhoneCall,
-  PhoneOff,
-  ExternalLink,
-  Flame,
-  Zap,
-  Cpu,
-  BookmarkCheck,
-  Music,
-  AudioWaveform,
   Camera,
   Image as ImageIcon,
   X,
   ZoomIn,
-  RefreshCw
+  RefreshCw,
+  Menu,
+  ThumbsUp,
+  ThumbsDown,
+  MessageSquare,
+  Lightbulb,
+  Code,
+  HeartHandshake,
+  ExternalLink,
+  ArrowUp,
+  Languages,
+  ChevronDown,
+  Zap,
+  Search,
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.js';
 import { useApp } from '../../context/AppContext.js';
@@ -36,22 +38,209 @@ import { api } from '../../services/api.js';
 import { firestoreService } from '../../services/firestoreService.js';
 import { AIConversation, AIMessage } from '../../types/index.js';
 
-type ModelTier = 'gemini-3.8-flash' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite' | 'gemini-3.5-flash';
+// Gemini 4-Point Sparkle Icon Component (Google Gemini signature gradient icon)
+export const GeminiSparkleIcon: React.FC<{ className?: string; size?: number }> = ({ className = "w-6 h-6", size = 24 }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <path
+      d="M12 2C12 7.52285 7.52285 12 2 12C7.52285 12 12 16.4771 12 22C12 16.4771 16.4771 12 22 12C16.4771 12 12 7.52285 12 2Z"
+      fill="url(#geminiGradIcon)"
+    />
+    <defs>
+      <linearGradient id="geminiGradIcon" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+        <stop stopColor="#4285F4" />
+        <stop offset="0.45" stopColor="#9B72CB" />
+        <stop offset="1" stopColor="#D96570" />
+      </linearGradient>
+    </defs>
+  </svg>
+);
+
+// Language detection helpers
+const isRTLText = (t: string) => /[\u0600-\u06FF]/.test(t);
+
+const detectSpeechLanguage = (text: string): string => {
+  if (/[\u0600-\u06FF]/.test(text)) return 'ur-PK';
+  if (/[\u0900-\u097F]/.test(text)) return 'hi-IN';
+  if (/[éèàçùâêîôû]/i.test(text) || text.toLowerCase().includes('bonjour')) return 'fr-FR';
+  if (/[áéíóúñ¿¡]/i.test(text) || text.toLowerCase().includes('hola')) return 'es-ES';
+  if (/[äöüß]/i.test(text) || text.toLowerCase().includes('hallo')) return 'de-DE';
+  return 'en-US';
+};
+
+// Supported language options for foreign language responses
+const LANGUAGE_OPTIONS = [
+  { id: 'auto', label: 'Auto Detect', flag: '🌐', prompt: '' },
+  { id: 'ur', label: 'اردو (Urdu)', flag: '🇵🇰', prompt: 'You MUST answer in pure, polite, and friendly Urdu (اردو) according to the user\'s demand.' },
+  { id: 'ar', label: 'العربية (Arabic)', flag: '🇸🇦', prompt: 'You MUST answer in fluent, polite, and friendly Arabic (العربية) according to the user\'s demand.' },
+  { id: 'fr', label: 'Français (French)', flag: '🇫🇷', prompt: 'You MUST answer in fluent, friendly French (Français) according to the user\'s demand.' },
+  { id: 'es', label: 'Español (Spanish)', flag: '🇪🇸', prompt: 'You MUST answer in fluent, warm, and friendly Spanish (Español) according to the user\'s demand.' },
+  { id: 'hi', label: 'हिन्दी (Hindi)', flag: '🇮🇳', prompt: 'You MUST answer in fluent, warm, and friendly Hindi (हिन्दी) according to the user\'s demand.' },
+  { id: 'de', label: 'Deutsch (German)', flag: '🇩🇪', prompt: 'You MUST answer in fluent and friendly German (Deutsch) according to the user\'s demand.' },
+  { id: 'en', label: 'English', flag: '🇺🇸', prompt: 'You MUST answer in fluent, friendly English according to the user\'s demand.' },
+];
+
+// Gemini Markdown & Code Formatter Component
+const GeminiFormattedText: React.FC<{ text: string }> = ({ text }) => {
+  const [copiedCodeIdx, setCopiedCodeIdx] = useState<number | null>(null);
+  const isRTL = isRTLText(text);
+
+  const copyCode = (code: string, idx: number) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCodeIdx(idx);
+    setTimeout(() => setCopiedCodeIdx(null), 2000);
+  };
+
+  // Split by code blocks
+  const parts = text.split(/(```[\s\S]*?```)/g);
+
+  return (
+    <div
+      dir={isRTL ? 'rtl' : 'ltr'}
+      className={`space-y-3.5 text-[15px] sm:text-[16px] leading-[1.8] text-gray-800 font-normal ${
+        isRTL ? 'text-right font-sans' : 'text-left'
+      }`}
+    >
+      {parts.map((part, index) => {
+        if (part.startsWith('```') && part.endsWith('```')) {
+          const lines = part.slice(3, -3).trim().split('\n');
+          const language = lines[0].match(/^[a-zA-Z0-9_-]+$/) ? lines[0] : '';
+          const codeBody = language ? lines.slice(1).join('\n') : lines.join('\n');
+
+          return (
+            <div
+              key={index}
+              dir="ltr"
+              className="my-4 rounded-xl overflow-hidden border border-gray-700/60 bg-[#1e1e1e] shadow-lg text-white text-left"
+            >
+              <div className="flex items-center justify-between px-4 py-2 bg-[#2d2d2d] text-xs font-mono text-gray-300 border-b border-gray-700/50">
+                <span className="uppercase font-semibold tracking-wider text-gray-400">
+                  {language || 'code'}
+                </span>
+                <button
+                  onClick={() => copyCode(codeBody, index)}
+                  className="flex items-center space-x-1 hover:text-white transition-colors text-gray-300"
+                >
+                  {copiedCodeIdx === index ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400 font-medium">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy code</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="p-4 overflow-x-auto font-mono text-[13px] sm:text-[14px] leading-relaxed text-gray-100 bg-[#1e1e1e]">
+                <code>{codeBody}</code>
+              </pre>
+            </div>
+          );
+        }
+
+        // Render regular markdown text
+        const paragraphs = part.split('\n\n');
+        return (
+          <div key={index} className="space-y-3">
+            {paragraphs.map((p, pIdx) => {
+              const trimmed = p.trim();
+              if (!trimmed) return null;
+
+              // Heading 1 or 2 or 3
+              if (trimmed.startsWith('### ')) {
+                return (
+                  <h3 key={pIdx} className="text-lg sm:text-xl font-semibold text-gray-900 mt-4 mb-1.5 tracking-tight flex items-center space-x-2">
+                    <span>{trimmed.replace(/^###\s+/, '')}</span>
+                  </h3>
+                );
+              }
+              if (trimmed.startsWith('## ')) {
+                return (
+                  <h2 key={pIdx} className="text-xl sm:text-2xl font-bold text-gray-900 mt-5 mb-2 tracking-tight">
+                    {trimmed.replace(/^##\s+/, '')}
+                  </h2>
+                );
+              }
+              if (trimmed.startsWith('# ')) {
+                return (
+                  <h1 key={pIdx} className="text-2xl sm:text-3xl font-extrabold text-gray-900 mt-6 mb-2 tracking-tight">
+                    {trimmed.replace(/^#\s+/, '')}
+                  </h1>
+                );
+              }
+
+              // Divider
+              if (trimmed === '---') {
+                return <hr key={pIdx} className="my-4 border-gray-200" />;
+              }
+
+              // Bullet list lines
+              const lines = trimmed.split('\n');
+              const isList = lines.every(l => l.trim().startsWith('- ') || l.trim().startsWith('* ') || /^\d+\.\s/.test(l.trim()));
+
+              if (isList) {
+                return (
+                  <ul key={pIdx} className={`space-y-2 my-2 ${isRTL ? 'pr-2' : 'pl-2'}`}>
+                    {lines.map((li, liIdx) => {
+                      const cleanLi = li.replace(/^[-*]\s+|\d+\.\s+/, '');
+                      return (
+                        <li key={liIdx} className="flex items-start space-x-2.5">
+                          <span className={`w-1.5 h-1.5 rounded-full bg-blue-600 mt-2.5 flex-shrink-0 ${isRTL ? 'ml-2.5' : 'mr-2.5'}`} />
+                          <span className="flex-1" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(cleanLi) }} />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                );
+              }
+
+              return (
+                <p key={pIdx} className="leading-[1.8]" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(p) }} />
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// Helper to format inline bold, italics, backticks
+function formatInlineMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em class="italic text-gray-700">$1</em>')
+    .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-gray-100 text-blue-700 font-mono text-[13px] border border-gray-200">$1</code>');
+}
 
 export const AiAssistantPage: React.FC = () => {
   const { user } = useAuth();
-  const { addToast, navigateTo } = useApp();
+  const { addToast } = useApp();
 
   const [conversations, setConversations] = useState<AIConversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [inputQuestion, setInputQuestion] = useState<string>('');
-  const [selectedSubject, setSelectedSubject] = useState<string>('Computer Science');
-  const [selectedRole, setSelectedRole] = useState<string>('exact_answer');
-  const [selectedModel, setSelectedModel] = useState<ModelTier>('gemini-3.8-flash');
   const [useSearchGrounding, setUseSearchGrounding] = useState<boolean>(false);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('auto');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.1-flash-lite');
+  const [languageMenuOpen, setLanguageMenuOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [deleteModalConv, setDeleteModalConv] = useState<{ id: string; title: string } | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [likedMap, setLikedMap] = useState<Record<string, 'up' | 'down'>>({});
 
   // Camera & Image Upload State
   const [attachedImage, setAttachedImage] = useState<{
@@ -70,66 +259,134 @@ export const AiAssistantPage: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Audio Transcription State (gemini-3.5-transcribe)
-  const [isRecording, setIsRecording] = useState<boolean>(false);
-  const [transcribing, setTranscribing] = useState<boolean>(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-
-  // Live Voice Conversation State (gemini-3.8-live)
-  const [voiceLiveActive, setVoiceLiveActive] = useState<boolean>(false);
-  const [voiceConnecting, setVoiceConnecting] = useState<boolean>(false);
-  const [voiceVolumeLevel, setVoiceVolumeLevel] = useState<number>(0);
-  const [voiceLogs, setVoiceLogs] = useState<{ sender: 'user' | 'gemini'; text: string; time: string }[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  // Audio Speech Recognition State
+  const [isListening, setIsListening] = useState<boolean>(false);
+  const speechRecognitionRef = useRef<any>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const voiceLogEndRef = useRef<HTMLDivElement>(null);
 
-  const subjects = [
-    'Computer Science',
-    'Programming',
-    'Mathematics',
-    'Physics',
-    'Engineering',
-    'English & Literature',
-    'General Academic'
-  ];
+  // Auto-scroll to bottom of conversation
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
 
-  const roleConfigs = [
-    {
-      id: 'exact_answer',
-      name: 'Exact Answer (No Extra Talking)',
-      icon: '🎯',
-      prompt: 'You are the .x assistant. Give ONLY the direct, exact answer. Absolutely NO extra talking, NO conversational filler, NO chit-chat, NO greetings ("Hello", "Hi", "Sure!"), and NO sign-offs ("Hope this helps!"). Directly give the exact answer, formula, or solution immediately.'
-    },
-    {
-      id: 'vision_expert',
-      name: 'Camera Visual Solver (Exact)',
-      icon: '📸',
-      prompt: 'You are the .x assistant for camera photos and pictures. When students send pictures of homework, textbook pages, math equations, or notes, read every detail and give ONLY the direct, exact solution and answer with no extra talking.'
-    },
-    {
-      id: 'coder',
-      name: 'Code & Algorithm (Exact)',
-      icon: '💻',
-      prompt: 'You are the .x assistant for programming. Give ONLY the exact code, direct output, or algorithm analysis with no extra talking or preambles.'
-    },
-    {
-      id: 'friendly',
-      name: 'Step-by-Step Tutor',
-      icon: '✨',
-      prompt: 'You are the .x assistant academic tutor. Provide a clear, step-by-step academic explanation with helpful structured steps.'
+  // Adjust textarea height on typing
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 180)}px`;
     }
-  ];
+  }, [inputQuestion]);
 
-  const quickPrompts = [
-    { label: '📸 Snap or upload a photo of homework for the exact answer', subject: 'Mathematics', isCameraPrompt: true },
-    { label: 'Explain the concept of database indexing & B-Trees', subject: 'Computer Science' },
-    { label: 'Verify recent academic breakthroughs in quantum computing', subject: 'Physics', grounding: true },
-    { label: 'What is the asymptotic complexity of QuickSort vs MergeSort?', subject: 'Computer Science' },
-  ];
+  // Load conversations on mount
+  useEffect(() => {
+    loadConversations();
+  }, [user]);
+
+  // Load messages when activeConvId changes
+  useEffect(() => {
+    if (activeConvId) {
+      loadMessages(activeConvId);
+    } else {
+      setMessages([]);
+    }
+  }, [activeConvId]);
+
+  // Cleanup camera and audio on unmount
+  useEffect(() => {
+    return () => {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
+
+  const loadConversations = async () => {
+    try {
+      const res = await api.getAiConversations();
+      if (res.success && res.conversations) {
+        setConversations(res.conversations);
+        if (res.conversations.length > 0 && !activeConvId) {
+          setActiveConvId(res.conversations[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load conversations:', err);
+    }
+  };
+
+  const loadMessages = async (convId: string) => {
+    try {
+      const res = await api.getAiMessages(convId);
+      if (res.success && res.messages) {
+        setMessages(res.messages);
+      }
+    } catch (err) {
+      console.error('Failed to load messages:', err);
+    }
+  };
+
+  const handleNewChat = () => {
+    setActiveConvId(null);
+    setMessages([]);
+    setInputQuestion('');
+    setAttachedImage(null);
+    if (window.innerWidth < 1024) {
+      setSidebarOpen(false);
+    }
+  };
+
+  const handleSelectConv = (convId: string) => {
+    setActiveConvId(convId);
+    if (window.innerWidth < 1024) {
+      setSidebarOpen(false);
+    }
+  };
+
+  const handleOpenDeleteModal = (e: React.MouseEvent, conv: { id: string; title: string }) => {
+    e.stopPropagation();
+    setDeleteModalConv(conv);
+  };
+
+  const confirmDeleteConv = async (convId: string) => {
+    try {
+      await api.deleteAiConversation(convId);
+      const updated = conversations.filter(c => c.id !== convId);
+      setConversations(updated);
+      if (activeConvId === convId) {
+        if (updated.length > 0) {
+          setActiveConvId(updated[0].id);
+        } else {
+          setActiveConvId(null);
+          setMessages([]);
+        }
+      }
+      setDeleteModalConv(null);
+      addToast({ type: 'info', message: 'Chat removed from recent history' });
+    } catch (err) {
+      addToast({ type: 'error', message: 'Failed to delete chat' });
+    }
+  };
+
+  const handleClearAllConversations = async () => {
+    if (!window.confirm("Are you sure you want to delete all previous conversations?")) return;
+    try {
+      for (const c of conversations) {
+        await api.deleteAiConversation(c.id).catch(() => {});
+      }
+      setConversations([]);
+      setActiveConvId(null);
+      setMessages([]);
+      addToast({ type: 'info', message: 'All recent chats cleared' });
+    } catch (err) {
+      addToast({ type: 'error', message: 'Failed to clear conversations' });
+    }
+  };
 
   // Camera Management
   const startCamera = async (facing: 'user' | 'environment' = cameraFacing) => {
@@ -148,399 +405,253 @@ export const AiAssistantPage: React.FC = () => {
       cameraStreamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
+        videoRef.current.play();
       }
       setCameraActive(true);
     } catch (err: any) {
-      console.warn("Camera access note:", err);
-      setCameraError("Camera permission was not granted or webcam is unavailable. You can also upload any picture directly!");
+      console.error('Camera access error:', err);
+      setCameraError('Unable to access camera. Please allow camera permissions in your browser.');
       setCameraActive(false);
     }
   };
 
-  const stopCamera = () => {
+  const openCameraModal = () => {
+    setCameraModalOpen(true);
+    setTimeout(() => startCamera(cameraFacing), 150);
+  };
+
+  const closeCameraModal = () => {
     if (cameraStreamRef.current) {
       cameraStreamRef.current.getTracks().forEach(t => t.stop());
       cameraStreamRef.current = null;
     }
     setCameraActive(false);
-  };
-
-  const openCameraModal = () => {
-    setCameraModalOpen(true);
-    setTimeout(() => {
-      startCamera(cameraFacing);
-    }, 120);
-  };
-
-  const closeCameraModal = () => {
-    stopCamera();
     setCameraModalOpen(false);
   };
 
   const toggleCameraFacing = () => {
-    const nextFacing = cameraFacing === 'environment' ? 'user' : 'environment';
-    setCameraFacing(nextFacing);
-    startCamera(nextFacing);
+    const next = cameraFacing === 'environment' ? 'user' : 'environment';
+    setCameraFacing(next);
+    startCamera(next);
   };
 
   const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-
-    canvas.width = video.videoWidth || 640;
-    canvas.height = video.videoHeight || 480;
+    canvas.width = video.videoWidth || 1280;
+    canvas.height = video.videoHeight || 720;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+    const base64Data = dataUrl.split(',')[1];
 
     setAttachedImage({
-      data: dataUrl,
+      data: base64Data,
       mimeType: 'image/jpeg',
       previewUrl: dataUrl,
-      name: 'Camera Snapshot'
+      name: `Snapshot_${new Date().toLocaleTimeString().replace(/:/g, '-')}.jpg`
     });
 
     closeCameraModal();
-    addToast({
-      type: 'success',
-      title: 'Picture Captured!',
-      message: 'Photo attached. Send it to the AI assistant to read and answer!'
-    });
+    addToast({ type: 'success', message: 'Photo captured! Attached to prompt.' });
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
-      addToast({ type: 'warning', message: 'Please select an image file (PNG, JPG, JPEG, WEBP).' });
-      return;
-    }
-
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
+    reader.onload = (uploadEvent) => {
+      const dataUrl = uploadEvent.target?.result as string;
+      const base64Data = dataUrl.split(',')[1];
       setAttachedImage({
-        data: dataUrl,
+        data: base64Data,
         mimeType: file.type || 'image/jpeg',
         previewUrl: dataUrl,
         name: file.name
       });
-      if (cameraModalOpen) {
-        closeCameraModal();
-      }
-      addToast({
-        type: 'info',
-        title: 'Picture Attached',
-        message: `Ready to send "${file.name}" to AI assistant.`
-      });
+      addToast({ type: 'success', message: `Attached ${file.name}` });
     };
     reader.readAsDataURL(file);
     e.target.value = '';
   };
 
-  // Fetch conversations
-  useEffect(() => {
-    async function loadConversations() {
-      try {
-        const res = await api.getAiConversations();
-        if (res.success) {
-          setConversations(res.conversations);
-          if (res.conversations.length > 0) {
-            setActiveConvId(res.conversations[0].id);
-          }
-        }
-      } catch (err) {
-        console.error("AI conversations load error:", err);
-      }
+  // Speech Recognition (Web Speech API)
+  const handleToggleVoiceRecord = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      addToast({ type: 'error', message: 'Speech recognition is not supported in this browser.' });
+      return;
     }
-    loadConversations();
-  }, []);
 
-  // Fetch messages when conversation changes
-  useEffect(() => {
-    async function loadMessages() {
-      if (!activeConvId) {
-        setMessages([]);
-        return;
+    if (isListening) {
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
       }
-      try {
-        const res = await api.getAiMessages(activeConvId);
-        if (res.success) {
-          setMessages(res.messages);
-        }
-      } catch (err) {
-        console.error("AI messages load error:", err);
-      }
+      setIsListening(false);
+      return;
     }
-    loadMessages();
-  }, [activeConvId]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  useEffect(() => {
-    voiceLogEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [voiceLogs]);
-
-  // Cleanup camera stream on unmount
-  useEffect(() => {
-    return () => {
-      if (cameraStreamRef.current) {
-        cameraStreamRef.current.getTracks().forEach(t => t.stop());
-      }
-    };
-  }, []);
-
-  const handleNewChat = async () => {
     try {
-      const res = await api.createAiConversation("New Academic Inquiry", selectedSubject);
-      if (res.success) {
-        setConversations(prev => [res.conversation, ...prev]);
-        setActiveConvId(res.conversation.id);
-        setMessages([]);
-      }
-    } catch (err: any) {
-      addToast({ type: 'error', message: err.message });
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      
+      // Auto-set speech recognition language according to user selection
+      if (selectedLanguage === 'ur') recognition.lang = 'ur-PK';
+      else if (selectedLanguage === 'ar') recognition.lang = 'ar-SA';
+      else if (selectedLanguage === 'fr') recognition.lang = 'fr-FR';
+      else if (selectedLanguage === 'es') recognition.lang = 'es-ES';
+      else if (selectedLanguage === 'hi') recognition.lang = 'hi-IN';
+      else if (selectedLanguage === 'de') recognition.lang = 'de-DE';
+      else recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+          setInputQuestion(prev => (prev ? `${prev} ${transcript}` : transcript));
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      speechRecognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('Speech recognition exception:', err);
+      setIsListening(false);
     }
   };
 
-  const handleDeleteConv = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    try {
-      await api.deleteAiConversation(id);
-      const remaining = conversations.filter(c => c.id !== id);
-      setConversations(remaining);
-      if (activeConvId === id) {
-        setActiveConvId(remaining[0]?.id || null);
-      }
-      addToast({ type: 'info', message: 'Conversation deleted.' });
-    } catch (err: any) {
-      addToast({ type: 'error', message: err.message });
+  // Multilingual Text to Speech
+  const handleTextToSpeech = (text: string, msgId: string) => {
+    if (!window.speechSynthesis) {
+      addToast({ type: 'error', message: 'Text-to-speech is not supported on this browser.' });
+      return;
     }
+
+    if (speakingId === msgId) {
+      window.speechSynthesis.cancel();
+      setSpeakingId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    // Clean text of markdown characters for smooth speech
+    const cleanSpeech = text
+      .replace(/[#*`_~[\]()]/g, '')
+      .replace(/```[\s\S]*?```/g, 'Code block omitted.');
+
+    const utterance = new SpeechSynthesisUtterance(cleanSpeech);
+    utterance.lang = detectSpeechLanguage(cleanSpeech);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.onend = () => setSpeakingId(null);
+    utterance.onerror = () => setSpeakingId(null);
+
+    setSpeakingId(msgId);
+    window.speechSynthesis.speak(utterance);
   };
 
-  const handleAskQuestion = async (queryText?: string, overrideGrounding?: boolean) => {
-    const textToSend = queryText !== undefined ? queryText : inputQuestion;
-    if ((!textToSend.trim() && !attachedImage) || loading) return;
+  // Send Question to Gemini Advanced
+  const handleAskQuestion = async (predefinedQuestion?: string, withGrounding?: boolean, targetLang?: string) => {
+    const questionToSend = predefinedQuestion || inputQuestion.trim();
+    if (!questionToSend && !attachedImage) return;
 
     const currentImage = attachedImage;
+    const finalUseGrounding = withGrounding !== undefined ? withGrounding : useSearchGrounding;
+    const activeLang = targetLang || selectedLanguage;
+
+    // Reset input fields immediately
     setInputQuestion('');
     setAttachedImage(null);
     setLoading(true);
 
-    const activeRole = roleConfigs.find(r => r.id === selectedRole)?.prompt;
-    const groundingFlag = overrideGrounding !== undefined ? overrideGrounding : useSearchGrounding;
+    // Optimistic user message
+    const tempUserMsg: AIMessage = {
+      id: 'temp_u_' + Date.now(),
+      conversationId: activeConvId || 'pending',
+      sender: 'user',
+      text: questionToSend || '📸 [Attached Image]',
+      imageUrl: currentImage?.previewUrl,
+      createdAt: new Date().toISOString()
+    };
+    setMessages(prev => [...prev, tempUserMsg]);
 
     try {
+      let convId = activeConvId;
+      if (!convId) {
+        const title = questionToSend.slice(0, 36) || 'Multilingual Inquiry';
+        const newConvRes = await api.createAiConversation(title, 'General Academic');
+        if (newConvRes.success && newConvRes.conversation) {
+          convId = newConvRes.conversation.id;
+          setActiveConvId(convId);
+          setConversations(prev => [newConvRes.conversation, ...prev]);
+        }
+      }
+
+      // Compute language directive for Gemini Advanced
+      const langOption = LANGUAGE_OPTIONS.find(l => l.id === activeLang);
+      const rolePrompt = langOption?.prompt 
+        ? `${langOption.prompt} Answer every single question according to the user's demand in real time. Be warm, friendly, empathetic, and reliable.`
+        : "You are Gemini Advanced. Detect and honor the user's language demand without exception. If the user writes or asks in any foreign language (Urdu, Hindi, Arabic, Spanish, French, etc.), answer 100% in that demanded language in a friendly and structured way.";
+
       const res = await api.askAiQuestion({
-        conversationId: activeConvId || undefined,
-        question: textToSend.trim(),
-        subject: selectedSubject,
+        conversationId: convId || undefined,
+        question: questionToSend,
         model: selectedModel,
-        rolePrompt: activeRole,
-        useSearchGrounding: groundingFlag,
-        image: currentImage ? {
-          data: currentImage.data,
-          mimeType: currentImage.mimeType
-        } : undefined
+        rolePrompt,
+        useSearchGrounding: finalUseGrounding,
+        image: currentImage
+          ? {
+              data: currentImage.data,
+              mimeType: currentImage.mimeType
+            }
+          : undefined
       });
 
-      if (res.success) {
-        if (!activeConvId) {
-          setActiveConvId(res.conversationId);
-          const convsRes = await api.getAiConversations();
-          if (convsRes.success) setConversations(convsRes.conversations);
-        }
-        
-        // Attach search sources to assistant message if present
-        const assistantWithSources = {
-          ...res.assistantMessage,
-          searchSources: res.searchSources,
-          modelUsed: res.modelUsed
-        };
+      if (res.success && res.assistantMessage) {
+        setMessages(prev => {
+          const filtered = prev.filter(m => m.id !== tempUserMsg.id);
+          return [...filtered, res.userMessage, res.assistantMessage];
+        });
 
-        setMessages(prev => [...prev, res.userMessage, assistantWithSources]);
+        if (res.searchSources && res.searchSources.length > 0) {
+          (res.assistantMessage as any).searchSources = res.searchSources;
+        }
+
+        // Update conversation in sidebar list
+        if (convId) {
+          setConversations(prev =>
+            prev.map(c =>
+              c.id === convId
+                ? { ...c, updatedAt: new Date().toISOString() }
+                : c
+            )
+          );
+        }
+      } else {
+        throw new Error('No assistant response received');
       }
     } catch (err: any) {
-      addToast({ type: 'error', message: err.message || 'AI request failed' });
+      console.error('Ask AI error:', err);
+      addToast({ type: 'error', message: 'Failed to get answer from Gemini. Please retry.' });
     } finally {
       setLoading(false);
-    }
-  };
-
-  // --- Audio Transcription with gemini-3.5-transcribe ---
-  const handleToggleVoiceRecord = async () => {
-    if (isRecording) {
-      // Stop recording
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-      setIsRecording(false);
-    } else {
-      // Start recording
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        audioChunksRef.current = [];
-        const mediaRecorder = new MediaRecorder(stream);
-        mediaRecorderRef.current = mediaRecorder;
-
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunksRef.current.push(event.data);
-          }
-        };
-
-        mediaRecorder.onstop = async () => {
-          // Stop stream tracks
-          stream.getTracks().forEach(t => t.stop());
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          
-          // Convert Blob to Base64
-          const reader = new FileReader();
-          reader.readAsDataURL(audioBlob);
-          reader.onloadend = async () => {
-            const base64Audio = reader.result as string;
-            setTranscribing(true);
-            try {
-              const res = await api.transcribeAudio({
-                audioBase64: base64Audio,
-                mimeType: 'audio/webm'
-              });
-
-              if (res.success && res.transcript) {
-                setInputQuestion(res.transcript);
-                addToast({
-                  type: 'success',
-                  title: 'Transcribed by gemini-3.5-transcribe',
-                  message: 'Speech converted to text successfully.'
-                });
-
-                // Persist transcription to Firestore for user history
-                if (user?.id) {
-                  firestoreService.saveTranscription({
-                    userId: user.id,
-                    title: res.transcript.slice(0, 35) + '...',
-                    text: res.transcript,
-                    modelUsed: 'gemini-3.5-transcribe'
-                  }).catch(() => {});
-                }
-              }
-            } catch (err: any) {
-              addToast({ type: 'error', message: err.message || 'Transcription failed.' });
-            } finally {
-              setTranscribing(false);
-            }
-          };
-        };
-
-        mediaRecorder.start();
-        setIsRecording(true);
-        addToast({ type: 'info', message: 'Listening... speak your academic question.' });
-      } catch (err) {
-        addToast({
-          type: 'error',
-          title: 'Microphone Access',
-          message: 'Could not access microphone. Please enable audio permissions.'
-        });
-      }
-    }
-  };
-
-  // --- Voice Live Conversation with gemini-3.8-live ---
-  const handleToggleVoiceLive = async () => {
-    if (voiceLiveActive) {
-      // Disconnect
-      setVoiceLiveActive(false);
-      setVoiceVolumeLevel(0);
-      if (user?.id && activeSessionId) {
-        firestoreService.saveVoiceSession({
-          userId: user.id,
-          userEmail: user.email,
-          title: `Voice Session: ${selectedSubject}`,
-          transcriptCount: voiceLogs.length,
-          durationSeconds: 45
-        }).catch(() => {});
-      }
-      addToast({ type: 'info', message: 'Live voice conversation ended.' });
-      return;
-    }
-
-    setVoiceConnecting(true);
-    try {
-      const res = await api.createLiveVoiceSession({
-        topic: selectedSubject,
-        voice: 'Puck'
-      });
-
-      if (res.success) {
-        setActiveSessionId(res.sessionId);
-        setVoiceLiveActive(true);
-        setVoiceConnecting(false);
-
-        // Add greeting from Live API voice tutor
-        const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setVoiceLogs([
-          {
-            sender: 'gemini',
-            text: `Hello ${user?.name || 'Scholar'}! I am connected via gemini-3.8-live. Speak freely or ask any academic question — I am listening in real-time.`,
-            time: now
-          }
-        ]);
-
-        addToast({
-          type: 'success',
-          title: 'Live API Connected',
-          message: 'Real-time voice channel active with gemini-3.8-live.'
-        });
-
-        // Simulate real-time volume activity indicator
-        const interval = setInterval(() => {
-          setVoiceVolumeLevel(Math.floor(Math.random() * 80) + 20);
-        }, 300);
-
-        return () => clearInterval(interval);
-      }
-    } catch (err: any) {
-      setVoiceConnecting(false);
-      addToast({ type: 'error', message: err.message || 'Failed to start Live Voice session.' });
-    }
-  };
-
-  const handleSimulateVoiceInput = async (userSpeech: string) => {
-    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setVoiceLogs(prev => [...prev, { sender: 'user', text: userSpeech, time: now }]);
-
-    try {
-      const res = await api.sendLiveVoiceTurn({
-        sessionId: activeSessionId || undefined,
-        userText: userSpeech,
-        voice: 'Zephyr'
-      });
-
-      if (res.success && res.replyText) {
-        const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        setVoiceLogs(prev => [...prev, { sender: 'gemini', text: res.replyText, time: replyTime }]);
-
-        // Spoken voice feedback via browser SpeechSynthesis
-        if ('speechSynthesis' in window) {
-          const utter = new SpeechSynthesisUtterance(res.replyText);
-          utter.rate = 1.05;
-          window.speechSynthesis.speak(utter);
-        }
-      }
-    } catch (err: any) {
-      const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const fallbackReply = "In academic analysis, this concept is explored through structured formal proofs and empirical verification.";
-      setVoiceLogs(prev => [...prev, { sender: 'gemini', text: fallbackReply, time: replyTime }]);
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.speak(new SpeechSynthesisUtterance(fallbackReply));
-      }
     }
   };
 
@@ -548,528 +659,487 @@ export const AiAssistantPage: React.FC = () => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
-    addToast({ type: 'success', message: 'Academic response copied to clipboard' });
+    addToast({ type: 'success', message: 'Copied to clipboard' });
   };
 
+  const handleToggleLike = (id: string, type: 'up' | 'down') => {
+    setLikedMap(prev => ({
+      ...prev,
+      [id]: prev[id] === type ? undefined : type
+    } as any));
+  };
+
+  const userName = user?.name ? user.name.split(' ')[0] : 'Learner';
+  const currentLangLabel = LANGUAGE_OPTIONS.find(l => l.id === selectedLanguage)?.label || 'Auto Detect';
+  const currentLangFlag = LANGUAGE_OPTIONS.find(l => l.id === selectedLanguage)?.flag || '🌐';
+
+  const filteredConversations = conversations.filter(c =>
+    c.title.toLowerCase().includes(searchQuery.toLowerCase().trim())
+  );
+
   return (
-    <div className="h-[calc(100vh-140px)] min-h-[650px] flex flex-col lg:flex-row gap-4 pb-6">
-      {/* 1. Left Sidebar: Model Selector, Role Configs, Subjects & History */}
-      <div className="hidden lg:flex flex-col w-80 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3.5">
-        {/* New Session Button */}
-        <button
-          onClick={handleNewChat}
-          className="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl shadow-md flex items-center justify-center space-x-2 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Multi-Turn Session</span>
-        </button>
+    <div className="h-[calc(100vh-125px)] min-h-[640px] flex overflow-hidden rounded-3xl bg-white border border-gray-200/90 shadow-2xl relative text-gray-900 font-sans">
+      {/* 1. Mobile Sliding Panel Backdrop */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 bg-black/40 z-30 backdrop-blur-xs lg:hidden transition-opacity duration-300"
+          title="Click to close sidebar"
+        />
+      )}
 
-        {/* Gemini Model Selector */}
-        <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
-              <Cpu className="w-3.5 h-3.5 text-blue-400" />
-              <span>Model Tier</span>
-            </label>
-            <span className="text-[10px] text-blue-400 font-semibold">Gemini API</span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-1.5">
+      {/* 2. Left Sidebar / Sliding Panel (Consistent with Gemini UI Design) */}
+      <aside
+        className={`fixed lg:relative inset-y-0 left-0 z-40 lg:z-10 h-full flex flex-col justify-between bg-[#f0f4f9] border-r border-gray-200/80 transition-all duration-300 ease-in-out shadow-2xl lg:shadow-none flex-shrink-0 ${
+          sidebarOpen
+            ? 'w-72 sm:w-80 translate-x-0'
+            : 'w-0 -translate-x-full lg:w-0 overflow-hidden'
+        }`}
+      >
+        <div className="p-3 sm:p-4 flex flex-col h-full overflow-hidden">
+          {/* Top Row: Hamburger / Close + "+ New chat" Button */}
+          <div className="flex items-center space-x-2 flex-shrink-0">
             <button
-              onClick={() => setSelectedModel('gemini-3.8-flash')}
-              className={`p-2 rounded-lg text-left text-xs transition-all flex items-center justify-between ${
-                selectedModel === 'gemini-3.8-flash'
-                  ? 'bg-blue-600/20 border border-blue-500/50 text-blue-300 font-semibold'
-                  : 'bg-slate-900/60 border border-transparent text-slate-400 hover:text-slate-200'
-              }`}
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 rounded-full hover:bg-gray-200/70 text-gray-700 transition-colors"
+              title="Close sidebar"
             >
-              <div>
-                <div className="flex items-center space-x-1.5">
-                  <Zap className="w-3 h-3 text-cyan-400" />
-                  <span className="font-bold">gemini-3.8-flash</span>
-                  <span className="text-[9px] bg-cyan-500/20 text-cyan-300 px-1 rounded font-bold">Fast & Vision</span>
-                </div>
-                <div className="text-[10px] text-slate-400">Fast reasoning & camera photo Q&A</div>
-              </div>
-              {selectedModel === 'gemini-3.8-flash' && <Check className="w-3.5 h-3.5 text-blue-400" />}
-            </button>
-
-            <button
-              onClick={() => setSelectedModel('gemini-3.1-flash-lite')}
-              className={`p-2 rounded-lg text-left text-xs transition-all flex items-center justify-between ${
-                selectedModel === 'gemini-3.1-flash-lite'
-                  ? 'bg-blue-600/20 border border-blue-500/50 text-blue-300 font-semibold'
-                  : 'bg-slate-900/60 border border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <div>
-                <div className="flex items-center space-x-1.5">
-                  <Zap className="w-3 h-3 text-emerald-400" />
-                  <span>gemini-3.1-flash-lite</span>
-                </div>
-                <div className="text-[10px] text-slate-400">Ultra-fast queries & concise answers</div>
-              </div>
-              {selectedModel === 'gemini-3.1-flash-lite' && <Check className="w-3.5 h-3.5 text-blue-400" />}
-            </button>
-
-            <button
-              onClick={() => setSelectedModel('gemini-3.1-pro-preview')}
-              className={`p-2 rounded-lg text-left text-xs transition-all flex items-center justify-between ${
-                selectedModel === 'gemini-3.1-pro-preview'
-                  ? 'bg-blue-600/20 border border-blue-500/50 text-blue-300 font-semibold'
-                  : 'bg-slate-900/60 border border-transparent text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <div>
-                <div className="flex items-center space-x-1.5">
-                  <Flame className="w-3 h-3 text-rose-400" />
-                  <span>gemini-3.1-pro-preview</span>
-                </div>
-                <div className="text-[10px] text-slate-400">Complex mathematical proofs & logic</div>
-              </div>
-              {selectedModel === 'gemini-3.1-pro-preview' && <Check className="w-3.5 h-3.5 text-blue-400" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Chatbot Persona / Role Selector */}
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-            Assistant Persona & Role:
-          </label>
-          <div className="grid grid-cols-2 gap-1.5">
-            {roleConfigs.map((role) => (
-              <button
-                key={role.id}
-                onClick={() => setSelectedRole(role.id)}
-                className={`p-2 rounded-xl text-left text-[11px] border transition-all ${
-                  selectedRole === role.id
-                    ? 'bg-blue-600/30 border-blue-500 text-blue-300 font-bold'
-                    : 'bg-slate-800/80 border-slate-700/60 text-slate-400 hover:text-white'
-                }`}
-                title={role.prompt}
-              >
-                <div className="text-base mb-0.5">{role.icon}</div>
-                <div className="truncate font-semibold">{role.name.split(' ')[0]} {role.name.split(' ')[1] || ''}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Academic Subject Focus */}
-        <div>
-          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-            Discipline:
-          </label>
-          <select
-            value={selectedSubject}
-            onChange={(e) => setSelectedSubject(e.target.value)}
-            className="w-full bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl p-2 focus:outline-none focus:border-blue-500"
-          >
-            {subjects.map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Google Search Grounding Toggle */}
-        <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Globe className={`w-4 h-4 ${useSearchGrounding ? 'text-emerald-400' : 'text-slate-500'}`} />
-            <div>
-              <div className="text-xs font-semibold text-slate-200">Google Search Data</div>
-              <div className="text-[9px] text-slate-400">Live academic search grounding</div>
-            </div>
-          </div>
-          <button
-            onClick={() => setUseSearchGrounding(!useSearchGrounding)}
-            className={`w-9 h-5 rounded-full p-0.5 transition-colors ${
-              useSearchGrounding ? 'bg-emerald-500' : 'bg-slate-700'
-            }`}
-          >
-            <div className={`w-4 h-4 rounded-full bg-white transition-transform ${
-              useSearchGrounding ? 'translate-x-4' : 'translate-x-0'
-            }`} />
-          </button>
-        </div>
-
-        {/* Conversation History List */}
-        <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 min-h-[100px]">
-          <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-            History:
-          </div>
-          {conversations.length === 0 ? (
-            <p className="text-xs text-slate-500 italic p-1">No previous chats.</p>
-          ) : (
-            conversations.map((c) => (
-              <div
-                key={c.id}
-                onClick={() => setActiveConvId(c.id)}
-                className={`group cursor-pointer p-2 rounded-xl text-xs flex items-center justify-between transition-colors ${
-                  activeConvId === c.id
-                    ? 'bg-blue-600/20 text-blue-300 border border-blue-500/40 font-semibold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <div className="truncate mr-2 flex items-center space-x-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
-                  <span className="truncate">{c.title}</span>
-                </div>
-                <button
-                  onClick={(e) => handleDeleteConv(e, c.id)}
-                  className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 p-0.5"
-                  title="Delete Conversation"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* 2. Main Workspace: Chat & Live Voice Split */}
-      <div className="flex-1 flex flex-col bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden relative">
-        {/* Top Header Bar */}
-        <div className="p-3 sm:p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/90 backdrop-blur-sm">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-cyan-400 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
-              <Bot className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <h2 className="font-bold text-sm sm:text-base text-white">.x assistant</h2>
-                <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold border border-blue-500/30">
-                  {selectedModel}
-                </span>
-                {useSearchGrounding && (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[10px] font-bold border border-emerald-500/30 flex items-center space-x-1">
-                    <Globe className="w-2.5 h-2.5" />
-                    <span>Search Grounded</span>
-                  </span>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-400">
-                Persona: <strong className="text-blue-400">{roleConfigs.find(r => r.id === selectedRole)?.name}</strong> • Subject: <span className="text-slate-300">{selectedSubject}</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            {/* Lyria Music Generator Navigation */}
-            <button
-              onClick={() => navigateTo('music')}
-              className="px-3 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-all bg-purple-600/30 hover:bg-purple-600 border border-purple-500/50 text-purple-200 hover:text-white"
-              title="Generate Study Music with Lyria (lyria-3-clip-preview / lyria-3-pro-preview)"
-            >
-              <Music className="w-3.5 h-3.5 text-purple-400" />
-              <span className="hidden md:inline">Focus Music (Lyria)</span>
-            </button>
-
-            {/* Live API Voice Conversation Trigger (gemini-3.8-live) */}
-            <button
-              onClick={handleToggleVoiceLive}
-              disabled={voiceConnecting}
-              className={`px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition-all shadow-md ${
-                voiceLiveActive
-                  ? 'bg-rose-600 text-white animate-pulse'
-                  : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-              }`}
-              title="Launch Live Voice Conversation with gemini-3.8-live"
-            >
-              {voiceLiveActive ? <PhoneOff className="w-4 h-4" /> : <Radio className="w-4 h-4" />}
-              <span className="hidden sm:inline">
-                {voiceConnecting ? 'Connecting...' : voiceLiveActive ? 'End Live API Voice' : 'gemini-3.8-live Voice'}
-              </span>
+              <Menu className="w-5 h-5" />
             </button>
 
             <button
               onClick={handleNewChat}
-              className="lg:hidden p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white"
-              title="New Chat"
+              className="flex-1 py-2.5 px-4 bg-[#e9eef6] hover:bg-[#dde3ea] text-gray-800 text-sm font-medium rounded-full shadow-xs flex items-center space-x-2.5 transition-all"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4 text-gray-700" />
+              <span>New chat</span>
+            </button>
+          </div>
+
+          {/* Search Recent Chats Filter */}
+          {conversations.length > 2 && (
+            <div className="relative mt-3 mb-1 px-1 flex-shrink-0">
+              <Search className="w-3.5 h-3.5 absolute left-3.5 top-2.5 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search recent chats..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-7 py-1.5 bg-white border border-gray-200/80 rounded-full text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Recent History Section */}
+          <div className="mt-4 flex-1 flex flex-col min-h-0">
+            <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider px-3 mb-2 flex items-center justify-between flex-shrink-0">
+              <span>Recent</span>
+              <span className="text-[10px] text-gray-400 font-normal">
+                {filteredConversations.length} {filteredConversations.length === 1 ? 'chat' : 'chats'}
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-1 pr-1">
+              {filteredConversations.length === 0 ? (
+                <div className="p-4 text-center text-xs text-gray-400 italic">
+                  {searchQuery ? "No chats found matching search." : "No recent conversations."}
+                </div>
+              ) : (
+                filteredConversations.map((c) => {
+                  const isActive = activeConvId === c.id;
+                  const isRtl = isRTLText(c.title);
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={() => handleSelectConv(c.id)}
+                      className={`group cursor-pointer px-3.5 py-2.5 rounded-full text-[13px] flex items-center justify-between transition-colors ${
+                        isActive
+                          ? 'bg-[#d3e3fd]/90 text-[#041e49] font-medium shadow-xs'
+                          : 'text-gray-700 hover:bg-[#e9eef6]'
+                      }`}
+                    >
+                      <div className={`truncate mr-2 flex items-center space-x-2.5 flex-1 min-w-0 ${isRtl ? 'flex-row-reverse text-right' : ''}`}>
+                        <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-500'}`} />
+                        <span className="truncate">{c.title}</span>
+                      </div>
+                      <button
+                        onClick={(e) => handleOpenDeleteModal(e, { id: c.id, title: c.title })}
+                        className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 hover:bg-red-50 p-1 rounded-full transition-all flex-shrink-0 ml-1"
+                        title="Delete chat"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Sidebar Info & Clear All */}
+          <div className="pt-3 border-t border-gray-200/60 mt-auto flex items-center justify-between text-xs text-gray-500 px-2 flex-shrink-0">
+            {conversations.length > 1 ? (
+              <button
+                onClick={handleClearAllConversations}
+                className="text-[11px] text-gray-400 hover:text-red-500 transition-colors flex items-center space-x-1"
+                title="Clear all conversation history"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Clear history</span>
+              </button>
+            ) : (
+              <div className="flex items-center space-x-1.5 font-medium">
+                <GeminiSparkleIcon size={14} />
+                <span>Dot X • Gemini</span>
+              </div>
+            )}
+            <span className="text-[10px] bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold px-2 py-0.5 rounded-full shadow-xs">
+              Advanced
+            </span>
+          </div>
+        </div>
+      </aside>
+
+      {/* 3. Main Workspace: Clean White Background, Minimal Gemini Advanced Layout */}
+      <div className="flex-1 flex flex-col bg-white overflow-hidden relative">
+        {/* Top Header Bar */}
+        <div className="px-4 py-3 sm:px-6 flex items-center justify-between border-b border-gray-100 bg-white">
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-1.5 rounded-full hover:bg-gray-100 text-gray-600 transition-colors"
+              title="Toggle sidebar"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center space-x-2.5">
+              <div className="relative">
+                <GeminiSparkleIcon size={24} />
+                <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                </span>
+              </div>
+              <div>
+                <div className="flex items-center space-x-1.5">
+                  <h1 className="font-semibold text-lg text-gray-900 tracking-tight">Gemini Advanced</h1>
+                  <span className="text-[10px] font-bold text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-rose-500 px-2 py-0.5 rounded-full shadow-xs">
+                    2.5 Pro
+                  </span>
+                </div>
+                <p className="text-[10px] text-gray-500 hidden sm:block">
+                  Multilingual AI • Real-Time Responses • Deep Reasoning
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            {/* Foreign Language Selector Pill */}
+            <div className="relative">
+              <button
+                onClick={() => setLanguageMenuOpen(!languageMenuOpen)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-[#f0f4f9] hover:bg-[#e1e6ed] text-gray-800 border border-gray-200/80 transition-colors shadow-xs"
+                title="Select language demand"
+              >
+                <span>{currentLangFlag}</span>
+                <span className="truncate max-w-[100px]">{currentLangLabel.split(' ')[0]}</span>
+                <ChevronDown className="w-3 h-3 text-gray-500" />
+              </button>
+
+              {languageMenuOpen && (
+                <div
+                  className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-xl border border-gray-200 py-1.5 z-50 text-xs text-gray-800 animate-in fade-in duration-150"
+                  onClick={() => setLanguageMenuOpen(false)}
+                >
+                  <div className="px-3 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100">
+                    Language Demand (زبان)
+                  </div>
+                  {LANGUAGE_OPTIONS.map((lang) => (
+                    <button
+                      key={lang.id}
+                      onClick={() => {
+                        setSelectedLanguage(lang.id);
+                        addToast({ type: 'info', message: `Language set: ${lang.label}` });
+                      }}
+                      className={`w-full text-left px-3.5 py-2 flex items-center justify-between hover:bg-blue-50 transition-colors ${
+                        selectedLanguage === lang.id ? 'bg-blue-50/80 text-blue-700 font-bold' : ''
+                      }`}
+                    >
+                      <span className="flex items-center space-x-2">
+                        <span>{lang.flag}</span>
+                        <span>{lang.label}</span>
+                      </span>
+                      {selectedLanguage === lang.id && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleNewChat}
+              className="flex items-center space-x-1 px-3 py-1.5 rounded-full text-xs font-medium text-gray-700 hover:bg-gray-100 border border-gray-200 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5 text-gray-600" />
+              <span className="hidden sm:inline">New chat</span>
             </button>
           </div>
         </div>
 
-        {/* Live API Voice Panel Drawer (when active) */}
-        {voiceLiveActive && (
-          <div className="bg-indigo-950/80 border-b border-indigo-700/60 p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4 animate-in slide-in-from-top duration-300">
-            <div className="flex items-center space-x-3 w-full md:w-auto">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-600/30 border border-indigo-500/50 flex items-center justify-center text-indigo-300 relative">
-                <Volume2 className="w-6 h-6 animate-pulse" />
-                <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                </span>
-              </div>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <h4 className="text-white font-bold text-sm">gemini-3.8-live Real-Time Voice Channel</h4>
-                  <span className="bg-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold">
-                    Bidirectional Audio
+        {/* Scrollable Message Thread / Empty Greeting */}
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6">
+          {messages.length === 0 ? (
+            /* 100% Google Gemini Advanced New Chat Experience */
+            <div className="max-w-3xl mx-auto w-full h-full flex flex-col justify-center py-6 sm:py-10">
+              {/* Gemini Center Greeting */}
+              <div className="mb-8 sm:mb-10">
+                <div className="flex items-center space-x-2 mb-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200/50">
+                    Gemini Advanced • Real-Time Multilingual
                   </span>
                 </div>
-                <p className="text-xs text-indigo-200/80">
-                  Speak into your microphone or tap a sample inquiry to test spoken response.
-                </p>
-              </div>
-            </div>
-
-            {/* Quick spoken topics & Mic prompt */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => {
-                  if (!isRecording) {
-                    handleToggleVoiceRecord();
-                  }
-                }}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all flex items-center space-x-1 ${
-                  isRecording
-                    ? 'bg-rose-600 text-white border-rose-500 animate-pulse'
-                    : 'bg-indigo-800/80 hover:bg-indigo-700 text-indigo-100 border-indigo-600/60'
-                }`}
-                title="Speak directly via microphone"
-              >
-                <Mic className="w-3.5 h-3.5" />
-                <span>{isRecording ? 'Listening...' : 'Push to Talk'}</span>
-              </button>
-              <button
-                onClick={() => handleSimulateVoiceInput("Explain database indexing with B-Trees")}
-                className="px-2.5 py-1 rounded-lg bg-indigo-800/60 hover:bg-indigo-700 text-[11px] text-white border border-indigo-600/50"
-              >
-                🎙️ "Explain B-Trees"
-              </button>
-              <button
-                onClick={() => handleSimulateVoiceInput("What is Big O of MergeSort?")}
-                className="px-2.5 py-1 rounded-lg bg-indigo-800/60 hover:bg-indigo-700 text-[11px] text-white border border-indigo-600/50"
-              >
-                🎙️ "MergeSort Complexity"
-              </button>
-              <button
-                onClick={handleToggleVoiceLive}
-                className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-[11px] text-white font-bold"
-              >
-                Disconnect
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Scrollable Message Thread */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-          {/* If Live Voice is active, show voice stream log */}
-          {voiceLiveActive && voiceLogs.length > 0 && (
-            <div className="p-3 bg-indigo-950/40 rounded-2xl border border-indigo-800/50 space-y-2 mb-4">
-              <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider flex items-center space-x-1.5">
-                <Radio className="w-3 h-3 text-indigo-400" />
-                <span>Live Audio Transcript (gemini-3.8-live)</span>
-              </div>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {voiceLogs.map((log, i) => (
-                  <div key={i} className="text-xs flex items-start space-x-2">
-                    <span className={`font-bold ${log.sender === 'user' ? 'text-blue-400' : 'text-indigo-300'}`}>
-                      {log.sender === 'user' ? 'You:' : 'Gemini Live:'}
-                    </span>
-                    <span className="text-slate-200 flex-1">{log.text}</span>
-                    <span className="text-[9px] text-slate-500">{log.time}</span>
-                  </div>
-                ))}
-                <div ref={voiceLogEndRef} />
-              </div>
-            </div>
-          )}
-
-          {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center max-w-lg mx-auto space-y-4 py-8">
-              <div className="w-16 h-16 rounded-2xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shadow-inner">
-                <Sparkles className="w-8 h-8" />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-white">How can I assist your academic studies today?</h3>
-                <p className="text-xs text-slate-400 mt-1">
-                  Ask multi-turn queries, request step-by-step proofs, or transcribe your lecture audio with Gemini.
+                <h2 className="text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight bg-gradient-to-r from-[#4285F4] via-[#9B72CB] to-[#D96570] bg-clip-text text-transparent">
+                  Hello, {userName}
+                </h2>
+                <p className="text-2xl sm:text-3xl lg:text-4xl font-semibold text-[#c4c7c5] tracking-tight mt-1.5">
+                  How can I help you today? / کس زبان میں رہنمائی چاہیے؟
                 </p>
               </div>
 
-              {/* Quick Prompts */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full text-left pt-2">
-                {quickPrompts.map((qp, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      setSelectedSubject(qp.subject);
-                      if ((qp as any).isCameraPrompt) {
-                        openCameraModal();
-                        return;
-                      }
-                      if (qp.grounding) setUseSearchGrounding(true);
-                      handleAskQuestion(qp.label, qp.grounding);
-                    }}
-                    className="p-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/50 text-xs text-slate-200 transition-all group"
-                  >
-                    <div className="flex items-center justify-between text-[10px] text-blue-400 font-semibold mb-1">
-                      <span>{qp.subject}</span>
-                      {qp.grounding ? (
-                        <span className="text-emerald-400 text-[9px] flex items-center space-x-1">
-                          <Globe className="w-2.5 h-2.5" />
-                          <span>Search</span>
-                        </span>
-                      ) : (qp as any).isCameraPrompt ? (
-                        <span className="text-amber-400 text-[9px] flex items-center space-x-1">
-                          <Camera className="w-2.5 h-2.5" />
-                          <span>Camera</span>
-                        </span>
-                      ) : (
-                        <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
-                      )}
+              {/* Multilingual Gemini Suggestion Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                {/* 1. Urdu / Foreign Language Prompt Card */}
+                <div
+                  onClick={() => handleAskQuestion("السلام علیکم! کیا آپ مجھے آسان اور دوستانہ انداز میں سمجھا سکتے ہیں کہ مصنوعی ذہانت اور مشین لرننگ کیا ہے؟", false, 'ur')}
+                  className="bg-[#f0f4f9] hover:bg-[#dfe4ea] rounded-2xl p-4 sm:p-5 flex flex-col justify-between h-32 cursor-pointer transition-all border border-transparent hover:border-gray-300/40 shadow-xs group text-right"
+                  dir="rtl"
+                >
+                  <p className="text-[14px] text-gray-800 font-medium leading-relaxed">
+                    🇵🇰 اردو میں رہنمائی: "مصنوعی ذہانت اور مشین لرننگ آسان انداز میں سمجھائیں"
+                  </p>
+                  <div className="flex justify-start">
+                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-emerald-600 shadow-xs group-hover:scale-105 transition-transform">
+                      <Languages className="w-4 h-4" />
                     </div>
-                    <p className="line-clamp-2">{qp.label}</p>
-                  </button>
-                ))}
+                  </div>
+                </div>
+
+                {/* 2. French / Foreign Language Card */}
+                <div
+                  onClick={() => handleAskQuestion("Pouvez-vous expliquer le fonctionnement des algorithmes et du Big-O de manière simple et amicale ?", false, 'fr')}
+                  className="bg-[#f0f4f9] hover:bg-[#dfe4ea] rounded-2xl p-4 sm:p-5 flex flex-col justify-between h-32 cursor-pointer transition-all border border-transparent hover:border-gray-300/40 shadow-xs group"
+                >
+                  <p className="text-[14px] text-gray-800 font-normal leading-snug">
+                    🇫🇷 En Français: "Expliquez les algorithmes et la complexité Big-O de façon amicale"
+                  </p>
+                  <div className="flex justify-end">
+                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-blue-600 shadow-xs group-hover:scale-105 transition-transform">
+                      <Code className="w-4 h-4" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Deep Concept & Exam Support Card */}
+                <div
+                  onClick={() => handleAskQuestion("I am preparing for university exams and feeling overwhelmed. Build a calm, structured, high-yield study plan.")}
+                  className="bg-[#f0f4f9] hover:bg-[#dfe4ea] rounded-2xl p-4 sm:p-5 flex flex-col justify-between h-32 cursor-pointer transition-all border border-transparent hover:border-gray-300/40 shadow-xs group"
+                >
+                  <p className="text-[14px] text-gray-800 font-normal leading-snug">
+                    Stress-free exam plan: empathetic, step-by-step revision guidance
+                  </p>
+                  <div className="flex justify-end">
+                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-rose-500 shadow-xs group-hover:scale-105 transition-transform">
+                      <HeartHandshake className="w-4 h-4" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Multimodal Camera Visual Card */}
+                <div
+                  onClick={() => openCameraModal()}
+                  className="bg-[#f0f4f9] hover:bg-[#dfe4ea] rounded-2xl p-4 sm:p-5 flex flex-col justify-between h-32 cursor-pointer transition-all border border-transparent hover:border-gray-300/40 shadow-xs group"
+                >
+                  <p className="text-[14px] text-gray-800 font-normal leading-snug">
+                    📸 Multimodal Camera: Photograph any textbook page, math formula, or diagram
+                  </p>
+                  <div className="flex justify-end">
+                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-amber-500 shadow-xs group-hover:scale-105 transition-transform">
+                      <Camera className="w-4 h-4" />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           ) : (
-            messages.map((m) => {
-              const isUser = m.sender === 'user';
-              const searchSources = (m as any).searchSources;
-              const modelUsed = (m as any).modelUsed;
+            /* Active Messages Thread */
+            <div className="max-w-3xl mx-auto w-full space-y-8">
+              {messages.map((m) => {
+                const isUser = m.sender === 'user';
+                const searchSources = (m as any).searchSources;
+                const isLiked = likedMap[m.id];
+                const isUrduArabic = isRTLText(m.text);
 
-              return (
-                <div
-                  key={m.id}
-                  className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div className={`flex items-start space-x-3 max-w-2xl ${isUser ? 'flex-row-reverse space-x-reverse' : ''}`}>
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0 shadow ${
-                      isUser
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gradient-to-tr from-cyan-600 to-blue-700 text-white'
-                    }`}>
-                      {isUser ? user?.name.charAt(0) || 'U' : <Bot className="w-4 h-4" />}
-                    </div>
-
-                    <div className={`rounded-2xl p-4 text-xs sm:text-sm leading-relaxed shadow-md ${
-                      isUser
-                        ? 'bg-blue-600 text-white rounded-tr-none'
-                        : 'bg-slate-800 text-slate-100 border border-slate-700/70 rounded-tl-none'
-                    }`}>
-                      {!isUser && (
-                        <div className="flex items-center justify-between border-b border-slate-700/60 pb-2 mb-2">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center space-x-1">
-                              <span>Exact Answer</span>
-                              <span className="text-amber-400">⚡ Direct & Precise</span>
-                            </span>
-                            {modelUsed && (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-900 text-slate-400">
-                                {modelUsed}
-                              </span>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => handleCopyText(m.text, m.id)}
-                            className="text-slate-400 hover:text-white p-1 rounded"
-                            title="Copy Answer"
-                          >
-                            {copiedId === m.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Display attached camera/picture in user or assistant message bubble */}
-                      {m.imageUrl && (
-                        <div className="mb-3 overflow-hidden rounded-xl border border-slate-700/60 bg-black/40 shadow-inner">
-                          <div
-                            className="relative group cursor-pointer"
-                            onClick={() => setZoomImageUrl(m.imageUrl || null)}
-                            title="Click to enlarge picture"
-                          >
+                if (isUser) {
+                  return (
+                    <div key={m.id} className="flex justify-end">
+                      <div
+                        dir={isUrduArabic ? 'rtl' : 'ltr'}
+                        className={`max-w-[85%] bg-[#f0f4f9] text-[#1f1f1f] rounded-[24px] px-5 py-3.5 text-[15px] sm:text-[16px] leading-relaxed shadow-xs ${
+                          isUrduArabic ? 'text-right' : 'text-left'
+                        }`}
+                      >
+                        {m.imageUrl && (
+                          <div className="mb-2.5 overflow-hidden rounded-xl border border-gray-200">
                             <img
                               src={m.imageUrl}
-                              alt="Attached visual"
-                              className="max-h-64 sm:max-h-80 w-auto object-contain mx-auto rounded-xl hover:opacity-95 transition-opacity"
+                              alt="Uploaded visual"
+                              className="max-h-60 sm:max-h-72 w-auto object-contain rounded-xl cursor-pointer hover:opacity-95"
+                              onClick={() => setZoomImageUrl(m.imageUrl || null)}
                             />
-                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-1.5 text-white text-xs font-semibold">
-                              <ZoomIn className="w-4 h-4 text-amber-300" />
-                              <span>Click to enlarge photo</span>
-                            </div>
                           </div>
-                          <div className="px-2.5 py-1 bg-slate-950/70 text-[10px] text-slate-300 flex items-center justify-between border-t border-slate-800">
-                            <span className="flex items-center space-x-1 font-medium">
-                              <Camera className="w-3 h-3 text-amber-400" />
-                              <span>Photo Analyzed by AI</span>
-                            </span>
-                            <span className="text-[9px] text-slate-400">Multimodal Gemini Vision</span>
-                          </div>
+                        )}
+                        <div className="whitespace-pre-wrap">{m.text}</div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Gemini Assistant Response
+                return (
+                  <div key={m.id} className="flex items-start space-x-3 sm:space-x-4">
+                    <div className="w-7 h-7 flex-shrink-0 mt-0.5">
+                      <GeminiSparkleIcon size={26} />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      {/* Attached Image inside assistant response if any */}
+                      {m.imageUrl && (
+                        <div className="mb-3 max-w-sm overflow-hidden rounded-xl border border-gray-200">
+                          <img
+                            src={m.imageUrl}
+                            alt="Analyzed media"
+                            className="max-h-64 object-contain rounded-xl cursor-pointer"
+                            onClick={() => setZoomImageUrl(m.imageUrl || null)}
+                          />
                         </div>
                       )}
 
-                      <div className="whitespace-pre-wrap leading-relaxed space-y-2">
-                        {m.text}
-                      </div>
+                      {/* Gemini Formatted Response */}
+                      <GeminiFormattedText text={m.text} />
 
                       {/* Google Search Grounding Sources */}
                       {searchSources && searchSources.length > 0 && (
-                        <div className="mt-3 pt-2.5 border-t border-slate-700/50 space-y-1">
-                          <div className="text-[10px] font-bold text-emerald-400 flex items-center space-x-1">
-                            <Globe className="w-3 h-3" />
-                            <span>Grounded with Google Search:</span>
+                        <div className="mt-4 pt-3 border-t border-gray-100 space-y-1.5">
+                          <div className="text-[11px] font-semibold text-gray-500 flex items-center space-x-1">
+                            <Globe className="w-3.5 h-3.5 text-blue-600" />
+                            <span>Sources from Google Search:</span>
                           </div>
-                          <div className="flex flex-wrap gap-1.5 pt-1">
+                          <div className="flex flex-wrap gap-2 pt-1">
                             {searchSources.map((s: any, idx: number) => (
                               <a
                                 key={idx}
                                 href={s.uri}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="inline-flex items-center space-x-1 text-[10px] bg-slate-900/80 hover:bg-slate-900 text-blue-300 px-2 py-1 rounded border border-slate-700"
+                                className="inline-flex items-center space-x-1 text-xs bg-[#f0f4f9] hover:bg-[#dfe4ea] text-blue-700 px-3 py-1.5 rounded-full border border-gray-200 transition-colors"
                               >
-                                <span>{s.title}</span>
-                                <ExternalLink className="w-2.5 h-2.5 text-slate-400" />
+                                <span className="truncate max-w-[200px]">{s.title}</span>
+                                <ExternalLink className="w-3 h-3 text-gray-400" />
                               </a>
                             ))}
                           </div>
                         </div>
                       )}
 
-                      <div className="text-[10px] mt-2 opacity-50 text-right">
-                        {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {/* Gemini Action Toolbar below response */}
+                      <div className="flex items-center space-x-1 sm:space-x-2 mt-4 pt-2 text-gray-500">
+                        <button
+                          onClick={() => handleToggleLike(m.id, 'up')}
+                          className={`p-1.5 rounded-full hover:bg-gray-100 transition-colors ${
+                            isLiked === 'up' ? 'text-blue-600 bg-blue-50' : ''
+                          }`}
+                          title="Good response"
+                        >
+                          <ThumbsUp className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => handleToggleLike(m.id, 'down')}
+                          className={`p-1.5 rounded-full hover:bg-gray-100 transition-colors ${
+                            isLiked === 'down' ? 'text-red-500 bg-red-50' : ''
+                          }`}
+                          title="Bad response"
+                        >
+                          <ThumbsDown className="w-4 h-4" />
+                        </button>
+
+                        <button
+                          onClick={() => handleCopyText(m.text, m.id)}
+                          className="p-1.5 rounded-full hover:bg-gray-100 transition-colors"
+                          title="Copy text"
+                        >
+                          {copiedId === m.id ? (
+                            <Check className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </button>
+
+                        <button
+                          onClick={() => handleTextToSpeech(m.text, m.id)}
+                          className={`p-1.5 rounded-full hover:bg-gray-100 transition-colors ${
+                            speakingId === m.id ? 'text-blue-600 bg-blue-50 animate-pulse' : ''
+                          }`}
+                          title={speakingId === m.id ? 'Stop listening' : 'Listen aloud (Multilingual speech)'}
+                        >
+                          {speakingId === m.id ? (
+                            <VolumeX className="w-4 h-4 text-blue-600" />
+                          ) : (
+                            <Volume2 className="w-4 h-4" />
+                          )}
+                        </button>
+
+                        {/* Foreign language indicator chip if RTL */}
+                        {isUrduArabic && (
+                          <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-bold ml-2">
+                            اردو / العربية
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
+                );
+              })}
+
+              {/* Gemini Shimmer Loading State */}
+              {loading && (
+                <div className="flex items-start space-x-3 sm:space-x-4">
+                  <div className="w-7 h-7 flex-shrink-0 animate-spin">
+                    <GeminiSparkleIcon size={26} />
+                  </div>
+                  <div className="space-y-2.5 flex-1 pt-1">
+                    <div className="h-4 bg-gradient-to-r from-blue-200 via-purple-200 to-pink-200 rounded-full w-3/4 animate-pulse" />
+                    <div className="h-4 bg-gradient-to-r from-blue-100 via-purple-100 to-pink-100 rounded-full w-1/2 animate-pulse" />
+                  </div>
                 </div>
-              );
-            })
-          )}
+              )}
 
-          {loading && (
-            <div className="flex justify-start">
-              <div className="flex items-center space-x-3 bg-slate-800 p-3.5 rounded-2xl border border-slate-700">
-                <Bot className="w-4 h-4 text-cyan-400 animate-spin" />
-                <span className="text-xs text-slate-300">
-                  {attachedImage ? "Reading photo & computing exact answer..." : `Computing exact answer with ${selectedModel}...`}
-                </span>
-              </div>
+              <div ref={messagesEndRef} />
             </div>
           )}
-
-          {transcribing && (
-            <div className="flex justify-start">
-              <div className="flex items-center space-x-3 bg-emerald-950/40 p-3.5 rounded-2xl border border-emerald-700/60">
-                <Mic className="w-4 h-4 text-emerald-400 animate-pulse" />
-                <span className="text-xs text-emerald-300">
-                  Transcribing speech with model gemini-3.5-transcribe...
-                </span>
-              </div>
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
         </div>
 
-        {/* Hidden file input for picture upload */}
+        {/* Hidden File Input for Picture Upload */}
         <input
           type="file"
           ref={fileInputRef}
@@ -1078,178 +1148,182 @@ export const AiAssistantPage: React.FC = () => {
           className="hidden"
         />
 
-        {/* Input Bar with Attached Picture Card, Camera, Upload & Controls */}
-        <div className="p-3 sm:p-4 border-t border-slate-800 bg-slate-900/90">
+        {/* 3. Centered Chat Input at the Bottom (100% Google Gemini Advanced Floating Pill UI) */}
+        <div className="p-3 sm:p-4 max-w-3xl mx-auto w-full">
+          {/* Quick Foreign Language Demand Chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-1 scrollbar-none text-[11px]">
+            <span className="text-gray-400 font-medium whitespace-nowrap text-[10px] uppercase tracking-wider flex items-center space-x-1 pl-1">
+              <Languages className="w-3 h-3 text-blue-500" />
+              <span>Language:</span>
+            </span>
+            {LANGUAGE_OPTIONS.map((lang) => (
+              <button
+                key={lang.id}
+                type="button"
+                onClick={() => {
+                  setSelectedLanguage(lang.id);
+                  addToast({ type: 'info', message: `Target language: ${lang.label}` });
+                }}
+                className={`px-2.5 py-1 rounded-full whitespace-nowrap transition-all flex items-center space-x-1 font-medium ${
+                  selectedLanguage === lang.id
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-[#f0f4f9] hover:bg-[#e1e6ed] text-gray-700'
+                }`}
+              >
+                <span>{lang.flag}</span>
+                <span>{lang.label.split(' ')[0]}</span>
+              </button>
+            ))}
+          </div>
+
           {/* Attached Picture Preview Banner */}
           {attachedImage && (
-            <div className="mb-2.5 p-2.5 bg-blue-950/60 border border-blue-500/40 rounded-xl flex items-center justify-between shadow-lg backdrop-blur-sm animate-in fade-in slide-in-from-bottom-2 duration-200">
-              <div className="flex items-center space-x-3 overflow-hidden">
-                <div
-                  className="relative group cursor-pointer w-12 h-12 rounded-lg overflow-hidden border border-blue-400/50 flex-shrink-0 bg-black/50"
+            <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded-2xl flex items-center justify-between shadow-xs">
+              <div className="flex items-center space-x-3">
+                <img
+                  src={attachedImage.previewUrl}
+                  alt="Attached preview"
+                  className="w-12 h-12 object-cover rounded-xl border border-blue-300 cursor-pointer"
                   onClick={() => setZoomImageUrl(attachedImage.previewUrl)}
-                  title="Click to zoom preview"
-                >
-                  <img
-                    src={attachedImage.previewUrl}
-                    alt="Attached visual"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white">
-                    <ZoomIn className="w-3.5 h-3.5 text-amber-300" />
-                  </div>
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center space-x-1.5">
-                    <span className="text-[11px] font-bold text-blue-300 flex items-center space-x-1">
-                      <Camera className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Picture Attached</span>
-                    </span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 font-medium">
-                      Ready to Read
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 truncate mt-0.5">
-                    {attachedImage.name || 'Camera Snapshot'} • Tap Send or ask a specific question
+                />
+                <div className="text-xs">
+                  <p className="font-semibold text-blue-900 truncate max-w-[220px]">
+                    {attachedImage.name || 'Photo attached'}
                   </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-1.5 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={openCameraModal}
-                  className="px-2.5 py-1 text-[11px] font-medium text-blue-200 bg-blue-900/60 hover:bg-blue-800 rounded-lg border border-blue-700/60 transition-colors"
-                >
-                  Retake
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAttachedImage(null)}
-                  className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors"
-                  title="Remove picture"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleAskQuestion();
-            }}
-            className="flex items-center gap-2"
-          >
-            {/* Camera Option Button */}
-            <button
-              type="button"
-              onClick={openCameraModal}
-              className="p-3 rounded-xl transition-all shadow bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 hover:text-amber-300 border border-amber-500/40 flex items-center space-x-1.5 flex-shrink-0"
-              title="Open Camera: Take a picture of textbook, math problem or homework"
-            >
-              <Camera className="w-4 h-4" />
-              <span className="hidden sm:inline text-xs font-semibold">Camera</span>
-            </button>
-
-            {/* Choose Picture File Button */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="p-3 rounded-xl transition-all shadow bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 flex-shrink-0"
-              title="Upload picture from device"
-            >
-              <ImageIcon className="w-4 h-4 text-cyan-400" />
-            </button>
-
-            {/* Audio Transcription Record Button (gemini-3.5-transcribe) */}
-            <button
-              type="button"
-              onClick={handleToggleVoiceRecord}
-              className={`p-3 rounded-xl transition-all shadow flex-shrink-0 ${
-                isRecording
-                  ? 'bg-rose-600 text-white animate-pulse'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700'
-              }`}
-              title={isRecording ? 'Stop recording & transcribe with gemini-3.5-transcribe' : 'Transcribe audio with gemini-3.5-transcribe'}
-            >
-              {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-            </button>
-
-            {/* Quick Google Search Toggle in Input Bar */}
-            <button
-              type="button"
-              onClick={() => setUseSearchGrounding(!useSearchGrounding)}
-              className={`p-3 rounded-xl transition-all border flex-shrink-0 ${
-                useSearchGrounding
-                  ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-400 border-slate-700'
-              }`}
-              title={useSearchGrounding ? 'Google Search Grounding Enabled' : 'Enable Google Search Grounding'}
-            >
-              <Globe className="w-4 h-4" />
-            </button>
-
-            {/* Input Field */}
-            <input
-              type="text"
-              placeholder={
-                isRecording
-                  ? 'Listening to speech...'
-                  : attachedImage
-                  ? 'Ask about this picture or tap Send for exact answer...'
-                  : 'Ask a question or snap a photo for the exact answer (no extra talking)...'
-              }
-              value={inputQuestion}
-              onChange={(e) => setInputQuestion(e.target.value)}
-              disabled={loading || transcribing}
-              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-xs sm:text-sm text-white placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 min-w-0"
-            />
-
-            {/* Submit Question / Picture */}
-            <button
-              type="submit"
-              disabled={(!inputQuestion.trim() && !attachedImage) || loading || transcribing}
-              className="px-4 sm:px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-40 text-white rounded-xl font-semibold shadow-lg shadow-blue-600/30 flex items-center space-x-1.5 transition-all flex-shrink-0"
-              title="Send question and picture to AI assistant"
-            >
-              <Send className="w-4 h-4" />
-              <span className="hidden sm:inline text-xs">Send</span>
-            </button>
-          </form>
-        </div>
-      </div>
-
-      {/* Live Camera Modal */}
-      {cameraModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col">
-            {/* Modal Header */}
-            <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
-              <div className="flex items-center space-x-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                  <Camera className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center space-x-1.5">
-                    <span>Take Picture for AI Assistant</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      Live Camera
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-slate-400">
-                    Point camera at homework, book, math formulas, or whiteboard notes
-                  </p>
+                  <p className="text-[11px] text-blue-600">Ready to analyze with Gemini Advanced Vision</p>
                 </div>
               </div>
               <button
+                onClick={() => setAttachedImage(null)}
+                className="p-1 rounded-full hover:bg-blue-100 text-blue-700 transition-colors"
+                title="Remove photo"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Gemini Input Pill Container */}
+          <div className="bg-[#f0f4f9] focus-within:bg-white focus-within:shadow-md border border-gray-200/60 focus-within:border-gray-300 rounded-[28px] transition-all p-3 sm:p-3.5">
+            <textarea
+              ref={textareaRef}
+              rows={1}
+              value={inputQuestion}
+              onChange={(e) => setInputQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleAskQuestion();
+                }
+              }}
+              dir={isRTLText(inputQuestion) ? 'rtl' : 'ltr'}
+              placeholder={
+                isListening
+                  ? "Listening to your voice..."
+                  : selectedLanguage === 'ur'
+                  ? "اردو میں سوال لکھیں یا تصویر بھیجیں..."
+                  : "Ask Gemini Advanced (any language / کسی بھی زبان میں پوچھیں)..."
+              }
+              disabled={loading}
+              className="w-full bg-transparent resize-none focus:outline-none text-[15px] sm:text-[16px] text-gray-900 placeholder:text-gray-500 max-h-44"
+            />
+
+            {/* Bottom Row of Input Tools */}
+            <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center space-x-1">
+                {/* Camera Button */}
+                <button
+                  type="button"
+                  onClick={openCameraModal}
+                  className="p-2 rounded-full hover:bg-gray-200/70 text-gray-600 hover:text-gray-900 transition-colors"
+                  title="Take a photo of homework or textbook"
+                >
+                  <Camera className="w-4 h-4" />
+                </button>
+
+                {/* Upload Image Button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-2 rounded-full hover:bg-gray-200/70 text-gray-600 hover:text-gray-900 transition-colors"
+                  title="Upload image from device"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                </button>
+
+                {/* Search Grounding Toggle Pill */}
+                <button
+                  type="button"
+                  onClick={() => setUseSearchGrounding(!useSearchGrounding)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium flex items-center space-x-1.5 transition-colors ${
+                    useSearchGrounding
+                      ? 'bg-blue-100 text-blue-700 border border-blue-300'
+                      : 'text-gray-600 hover:bg-gray-200/70'
+                  }`}
+                  title={useSearchGrounding ? "Google Search Grounding active" : "Enable Google Search Grounding"}
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Search</span>
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                {/* Speech to Text Mic Button */}
+                <button
+                  type="button"
+                  onClick={handleToggleVoiceRecord}
+                  className={`p-2 rounded-full transition-colors ${
+                    isListening
+                      ? 'bg-rose-500 text-white animate-pulse'
+                      : 'hover:bg-gray-200/70 text-gray-600 hover:text-gray-900'
+                  }`}
+                  title={isListening ? "Listening... click to stop" : "Voice input (Multilingual Speech)"}
+                >
+                  {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                </button>
+
+                {/* Send Button */}
+                <button
+                  type="button"
+                  onClick={() => handleAskQuestion()}
+                  disabled={(!inputQuestion.trim() && !attachedImage) || loading}
+                  className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${
+                    inputQuestion.trim() || attachedImage
+                      ? 'bg-[#1a73e8] hover:bg-[#1557b0] text-white shadow-xs'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }`}
+                  title="Send prompt"
+                >
+                  <ArrowUp className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Gemini Disclaimer */}
+          <p className="text-[11px] text-gray-400 text-center mt-2">
+            Gemini Advanced answers in any demanded language in real time. Dot X Learner Platform.
+          </p>
+        </div>
+      </div>
+
+      {/* Camera Capture Modal */}
+      {cameraModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col border border-gray-200">
+            <div className="px-5 py-4 flex items-center justify-between border-b border-gray-100">
+              <div className="flex items-center space-x-2">
+                <Camera className="w-5 h-5 text-blue-600" />
+                <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Take Photo for Gemini Advanced</h3>
+              </div>
+              <button
                 onClick={closeCameraModal}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                className="p-1 rounded-full text-gray-500 hover:bg-gray-100"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Video Viewport */}
             <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
               {cameraActive ? (
                 <video
@@ -1260,116 +1334,95 @@ export const AiAssistantPage: React.FC = () => {
                   className="w-full h-full object-contain"
                 />
               ) : (
-                <div className="text-center p-6 space-y-3">
+                <div className="p-6 text-center text-white space-y-2">
                   {cameraError ? (
-                    <div className="space-y-2 max-w-sm mx-auto">
-                      <div className="w-12 h-12 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center mx-auto">
-                        <Camera className="w-6 h-6" />
-                      </div>
-                      <p className="text-xs text-rose-300 font-medium">{cameraError}</p>
-                      <div className="pt-2 flex flex-col sm:flex-row gap-2 justify-center">
-                        <button
-                          onClick={() => startCamera(cameraFacing)}
-                          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 flex items-center justify-center space-x-1.5"
-                        >
-                          <RefreshCw className="w-3.5 h-3.5" />
-                          <span>Try Camera Again</span>
-                        </button>
-                        <button
-                          onClick={() => fileInputRef.current?.click()}
-                          className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs text-white font-medium flex items-center justify-center space-x-1.5"
-                        >
-                          <ImageIcon className="w-3.5 h-3.5" />
-                          <span>Select Photo from Device</span>
-                        </button>
-                      </div>
-                    </div>
+                    <p className="text-xs text-rose-300 font-medium">{cameraError}</p>
                   ) : (
-                    <div className="space-y-2">
-                      <RefreshCw className="w-8 h-8 text-blue-400 animate-spin mx-auto" />
-                      <p className="text-xs text-slate-400">Starting camera preview...</p>
-                    </div>
+                    <p className="text-xs text-gray-300">Starting camera preview...</p>
                   )}
                 </div>
               )}
-
               <canvas ref={canvasRef} className="hidden" />
-
-              {/* Live focus overlay frame */}
-              {cameraActive && (
-                <div className="absolute inset-4 sm:inset-8 border-2 border-white/30 rounded-xl pointer-events-none flex flex-col justify-between p-2">
-                  <div className="flex justify-between">
-                    <div className="w-4 h-4 border-t-2 border-l-2 border-amber-400" />
-                    <div className="w-4 h-4 border-t-2 border-r-2 border-amber-400" />
-                  </div>
-                  <div className="text-center text-[11px] font-medium text-white/80 bg-black/50 backdrop-blur-xs py-1 px-3 rounded-full mx-auto w-fit">
-                    Position textbook text or homework here
-                  </div>
-                  <div className="flex justify-between">
-                    <div className="w-4 h-4 border-b-2 border-l-2 border-amber-400" />
-                    <div className="w-4 h-4 border-b-2 border-r-2 border-amber-400" />
-                  </div>
-                </div>
-              )}
             </div>
 
-            {/* Modal Actions */}
-            <div className="p-3 sm:p-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                {/* Flip / Switch Camera (user <-> environment) */}
-                <button
-                  onClick={toggleCameraFacing}
-                  disabled={!cameraActive}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-xs text-slate-300 hover:text-white border border-slate-700 flex items-center space-x-1.5 transition-colors"
-                  title="Flip camera (Front / Back)"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Flip Camera</span>
-                </button>
+            <div className="p-4 bg-gray-50 flex items-center justify-between border-t border-gray-100">
+              <button
+                onClick={toggleCameraFacing}
+                disabled={!cameraActive}
+                className="px-3.5 py-2 rounded-full bg-white hover:bg-gray-100 text-xs font-medium text-gray-700 border border-gray-200 flex items-center space-x-1.5 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Flip camera</span>
+              </button>
 
-                {/* Upload from file button */}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 hover:text-white border border-slate-700 flex items-center space-x-1.5 transition-colors"
-                >
-                  <ImageIcon className="w-3.5 h-3.5 text-cyan-400" />
-                  <span className="hidden sm:inline">Choose File</span>
-                </button>
-              </div>
-
-              {/* Big Capture Button */}
               <button
                 onClick={capturePhoto}
                 disabled={!cameraActive}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-40 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-amber-500/20 flex items-center space-x-2 transition-all transform active:scale-95"
+                className="px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-medium text-xs sm:text-sm shadow-md flex items-center space-x-2 transition-all"
               >
                 <Camera className="w-4 h-4" />
-                <span>Capture Picture</span>
+                <span>Capture photo</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Zoom Image Modal */}
+      {/* High-Resolution Photo Zoom Modal */}
       {zoomImageUrl && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-md"
           onClick={() => setZoomImageUrl(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
             <button
               onClick={() => setZoomImageUrl(null)}
-              className="absolute -top-10 right-0 p-1.5 rounded-lg bg-slate-800 text-slate-300 hover:text-white"
+              className="absolute -top-10 right-0 p-1.5 rounded-full bg-gray-800 text-white hover:bg-gray-700"
             >
               <X className="w-5 h-5" />
             </button>
             <img
               src={zoomImageUrl}
-              alt="Enlarged visual"
-              className="max-h-[85vh] w-auto object-contain rounded-xl border border-slate-700 shadow-2xl"
+              alt="Zoomed media"
+              className="max-h-[85vh] w-auto object-contain rounded-2xl border border-gray-700 shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Delete Chat Confirmation Modal (Consistent with Gemini UI Design) */}
+      {deleteModalConv && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-gray-100 space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600 flex-shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-base text-gray-900">Delete chat?</h3>
+                <p className="text-xs text-gray-500">Remove from recent chat history</p>
+              </div>
+            </div>
+
+            <p className="text-xs sm:text-sm text-gray-600 leading-relaxed">
+              This will permanently delete <strong className="text-gray-900">"{deleteModalConv.title}"</strong> from your recent Gemini conversations.
+            </p>
+
+            <div className="flex items-center justify-end space-x-2 pt-2">
+              <button
+                onClick={() => setDeleteModalConv(null)}
+                className="px-4 py-2 rounded-full text-xs font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => confirmDeleteConv(deleteModalConv.id)}
+                className="px-4 py-2 rounded-full text-xs font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors shadow-sm"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}

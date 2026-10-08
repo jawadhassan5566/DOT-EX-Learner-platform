@@ -1,7 +1,7 @@
 /**
  * Dot X Library - API Client Service
  */
-import { Flashcard, FlashcardDeck, LectureMedia, LectureReaction, LectureComment } from '../types/index.js';
+import { Flashcard, FlashcardDeck, Quiz, QuizQuestion, QuizAttempt, LectureMedia, LectureReaction, LectureComment } from '../types/index.js';
 
 const API_BASE = '/api';
 
@@ -83,6 +83,9 @@ export const api = {
 
   getMe: () =>
     request<{ success: boolean; user: any }>('/auth/me'),
+
+  getUserPublicProfile: (userId: string) =>
+    request<{ success: boolean; user: any }>(`/auth/profile/${userId}`),
 
   updateProfile: (profileData: any) =>
     request<{ success: boolean; user: any; message: string }>('/auth/profile', {
@@ -193,10 +196,10 @@ export const api = {
   },
 
   getMeetingDetails: (id: string) =>
-    request<{ success: boolean; meeting: any; messages: any[]; whiteboardData: string | null }>(`/meetings/${id}`),
+    request<{ success: boolean; meeting: any; messages: any[]; whiteboardData: string | null; activeScreenShare?: any }>(`/meetings/${id}`),
 
   getMeetingByCode: (code: string) =>
-    request<{ success: boolean; meeting: any; messages: any[]; whiteboardData: string | null }>(`/meetings/code/${encodeURIComponent(code)}`),
+    request<{ success: boolean; meeting: any; messages: any[]; whiteboardData: string | null; activeScreenShare?: any }>(`/meetings/code/${encodeURIComponent(code)}`),
 
   joinMeeting: (id: string) =>
     request<{ success: boolean; meeting: any; message: string }>(`/meetings/${id}/join`, { method: 'POST' }),
@@ -382,6 +385,51 @@ export const api = {
     request<{ success: boolean; message: string }>(`/ai/flashcards/decks/${deckId}`, {
       method: 'DELETE'
     }),
+
+  // AI Quiz Generator & Scoring System
+  generateQuiz: (data: {
+    bookId: string;
+    chapterTitle?: string;
+    chapterIndex?: number;
+    chapterContent?: string;
+    focusArea?: string;
+    difficulty?: 'easy' | 'medium' | 'hard';
+  }) =>
+    request<{
+      success: boolean;
+      quiz: Quiz;
+      questions: QuizQuestion[];
+      totalQuestions: number;
+      modelUsed: string;
+      message: string;
+    }>('/ai/quiz/generate', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+
+  submitQuiz: (data: {
+    quizId: string;
+    bookId: string;
+    chapterTitle: string;
+    chapterIndex?: number;
+    answers: Record<string, number>;
+    timeSpentSeconds: number;
+    questions?: QuizQuestion[];
+    bookTitle?: string;
+  }) =>
+    request<{
+      success: boolean;
+      attempt: QuizAttempt;
+      message: string;
+    }>('/ai/quiz/submit', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }),
+
+  getQuizHistory: (bookId?: string) => {
+    const query = bookId ? `?bookId=${encodeURIComponent(bookId)}` : '';
+    return request<{ success: boolean; attempts: QuizAttempt[] }>(`/ai/quiz/history${query}`);
+  },
 
   // Notifications
   getNotifications: () =>

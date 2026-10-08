@@ -34,6 +34,7 @@ import { api } from '../../services/api.js';
 import { firestoreService } from '../../services/firestoreService.js';
 import { LectureMedia, LectureReactionType, LectureComment } from '../../types/index.js';
 import { UploadLectureModal } from '../admin/UploadLectureModal.js';
+import { UserProfileModal } from '../common/UserProfileModal.js';
 
 export const LecturesHubPage: React.FC = () => {
   const { user } = useAuth();
@@ -51,8 +52,16 @@ export const LecturesHubPage: React.FC = () => {
   const [zoomPictureUrl, setZoomPictureUrl] = useState<{ url: string; title: string } | null>(null);
   const [activeCommentsLectureId, setActiveCommentsLectureId] = useState<string | null>(null);
   const [activeReactorsModal, setActiveReactorsModal] = useState<LectureMedia | null>(null);
+  const [selectedProfileUserId, setSelectedProfileUserId] = useState<string | null>(null);
+  const [selectedProfileInitialData, setSelectedProfileInitialData] = useState<any | null>(null);
   const [newCommentTexts, setNewCommentTexts] = useState<Record<string, string>>({});
   const [submittingComment, setSubmittingComment] = useState<string | null>(null);
+
+  const handleOpenUserProfile = (userId: string, initialData?: any) => {
+    if (!userId) return;
+    setSelectedProfileUserId(userId);
+    setSelectedProfileInitialData(initialData || null);
+  };
 
   const isAdmin = user && (user.role === 'admin' || user.role === 'superadmin' || user.role === 'subadmin');
 
@@ -127,7 +136,8 @@ export const LecturesHubPage: React.FC = () => {
             return {
               ...l,
               likesCount: res.likesCount,
-              likedUserIds: res.likedUserIds
+              likedUserIds: res.likedUserIds,
+              reactions: (res as any).reactions || l.reactions
             };
           }
           return l;
@@ -558,15 +568,17 @@ export const LecturesHubPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Reactor Names Summary Box (CRITICAL REQUIREMENT: Names of reactors shown) */}
+                  {/* Reactor Names Summary Box (CRITICAL REQUIREMENT: Names of reactors shown & clickable to view profile) */}
                   {lecture.reactions && lecture.reactions.length > 0 && (
                     <div
-                      onClick={() => setActiveReactorsModal(lecture)}
-                      className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs cursor-pointer hover:border-slate-700 transition-colors group"
-                      title="Click to see all people who reacted"
+                      className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs hover:border-slate-700 transition-colors"
                     >
-                      <div className="flex items-center space-x-2 overflow-hidden">
-                        <div className="flex -space-x-1.5 overflow-hidden">
+                      <div className="flex items-center space-x-2 overflow-hidden flex-wrap gap-y-1">
+                        <div
+                          className="flex -space-x-1.5 overflow-hidden shrink-0 cursor-pointer"
+                          onClick={() => setActiveReactorsModal(lecture)}
+                          title="Click to view all who reacted"
+                        >
                           {lecture.reactions.slice(0, 4).map((r, i) => (
                             <span
                               key={i}
@@ -576,14 +588,51 @@ export const LecturesHubPage: React.FC = () => {
                             </span>
                           ))}
                         </div>
-                        <span className="text-[11px] text-slate-300 truncate">
-                          Reacted by <strong>{lecture.reactions.map(r => r.userName).slice(0, 3).join(', ')}</strong>
-                          {lecture.reactions.length > 3 ? ` and ${lecture.reactions.length - 3} others` : ''}
+                        <span className="text-[11px] text-slate-300">
+                          Reacted by{' '}
+                          {lecture.reactions.slice(0, 3).map((r, idx) => (
+                            <React.Fragment key={r.userId || idx}>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenUserProfile(r.userId, {
+                                    name: r.userName,
+                                    avatar: r.userAvatar,
+                                    role: r.userRole
+                                  });
+                                }}
+                                className="font-bold text-white hover:text-blue-400 hover:underline cursor-pointer transition-colors inline-block"
+                                title={`Click to view ${r.userName}'s public profile`}
+                              >
+                                {r.userName}
+                              </button>
+                              {idx < Math.min(2, lecture.reactions.length - 1) && ', '}
+                            </React.Fragment>
+                          ))}
+                          {lecture.reactions.length > 3 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveReactorsModal(lecture);
+                              }}
+                              className="text-slate-400 hover:text-white cursor-pointer hover:underline ml-1"
+                              title="View full list of reactors"
+                            >
+                              and {lecture.reactions.length - 3} others
+                            </button>
+                          )}
                         </span>
                       </div>
-                      <span className="text-[10px] text-blue-400 font-semibold group-hover:underline shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setActiveReactorsModal(lecture)}
+                        className="text-[10px] text-blue-400 font-semibold hover:underline shrink-0 ml-2 cursor-pointer"
+                        title="View all reactions and profiles"
+                      >
                         View Names &rarr;
-                      </span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -692,13 +741,25 @@ export const LecturesHubPage: React.FC = () => {
                             className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs space-y-1"
                           >
                             <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2">
+                              <div
+                                onClick={() => {
+                                  if (comm.userId) {
+                                    handleOpenUserProfile(comm.userId, {
+                                      name: comm.userName,
+                                      avatar: comm.userAvatar,
+                                      role: comm.userRole
+                                    });
+                                  }
+                                }}
+                                className="flex items-center space-x-2 cursor-pointer group"
+                                title={`Click to view ${comm.userName}'s public profile`}
+                              >
                                 <img
                                   src={comm.userAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop"}
                                   alt={comm.userName}
-                                  className="w-5 h-5 rounded-full object-cover"
+                                  className="w-5 h-5 rounded-full object-cover group-hover:ring-1 group-hover:ring-blue-400"
                                 />
-                                <span className="font-bold text-white">{comm.userName}</span>
+                                <span className="font-bold text-white group-hover:text-blue-400 group-hover:underline transition-colors">{comm.userName}</span>
                                 {comm.userRole && (
                                   <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono capitalize">
                                     {comm.userRole}
@@ -787,16 +848,27 @@ export const LecturesHubPage: React.FC = () => {
                   return (
                     <div
                       key={i}
-                      className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs"
+                      className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs hover:border-slate-700 transition-colors"
                     >
-                      <div className="flex items-center space-x-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleOpenUserProfile(r.userId, {
+                            name: r.userName,
+                            avatar: r.userAvatar,
+                            role: r.userRole
+                          });
+                        }}
+                        className="flex items-center space-x-2.5 cursor-pointer group text-left flex-1 mr-2"
+                        title={`Click to view ${r.userName}'s public profile`}
+                      >
                         <img
                           src={r.userAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop"}
                           alt={r.userName}
-                          className="w-7 h-7 rounded-full object-cover border border-slate-700"
+                          className="w-8 h-8 rounded-full object-cover border border-slate-700 group-hover:border-blue-400 group-hover:scale-105 transition-all"
                         />
                         <div>
-                          <div className="font-bold text-white flex items-center space-x-1.5">
+                          <div className="font-bold text-white group-hover:text-blue-400 group-hover:underline flex items-center space-x-1.5 transition-colors">
                             <span>{r.userName}</span>
                             {r.userRole && (
                               <span className="text-[9px] px-1 rounded bg-slate-800 text-slate-400 capitalize">
@@ -804,13 +876,13 @@ export const LecturesHubPage: React.FC = () => {
                               </span>
                             )}
                           </div>
-                          <span className="text-[10px] text-slate-400">
-                            Reacted on {new Date(r.createdAt).toLocaleDateString()}
+                          <span className="text-[10px] text-slate-400 block group-hover:text-blue-300 transition-colors">
+                            Reacted on {new Date(r.createdAt).toLocaleDateString()} • Click to view profile
                           </span>
                         </div>
-                      </div>
+                      </button>
 
-                      <div className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700">
+                      <div className="flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 shrink-0">
                         <span className="text-sm">{item?.emoji || '👍'}</span>
                         <span className="text-[11px] font-semibold text-slate-300">{item?.label || 'Reaction'}</span>
                       </div>
@@ -864,6 +936,17 @@ export const LecturesHubPage: React.FC = () => {
         onClose={() => setIsUploadModalOpen(false)}
         onSuccess={(newLecture) => {
           setLectures(prev => [newLecture, ...prev]);
+        }}
+      />
+
+      {/* Reusable Public User Profile Popup / Modal (Instagram/Facebook style preview card) */}
+      <UserProfileModal
+        isOpen={!!selectedProfileUserId}
+        userId={selectedProfileUserId}
+        initialData={selectedProfileInitialData}
+        onClose={() => {
+          setSelectedProfileUserId(null);
+          setSelectedProfileInitialData(null);
         }}
       />
     </div>

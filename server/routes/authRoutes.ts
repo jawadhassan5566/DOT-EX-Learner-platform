@@ -217,6 +217,34 @@ router.put('/profile', requireAuth, (req: AuthenticatedRequest, res: Response) =
   res.json({ success: true, user: safeUser, message: "Profile successfully updated." });
 });
 
+// Get Public Profile of any user by ID (viewable by all logged-in users and admin)
+router.get('/profile/:id', requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  const targetId = req.params.id;
+  const user = db.users.find(u => u.id === targetId);
+  if (!user) {
+    return res.status(404).json({ success: false, error: "User not found." });
+  }
+
+  // Return public profile information
+  res.json({
+    success: true,
+    user: {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      avatar: user.avatar,
+      role: user.role,
+      instituteId: user.instituteId || '',
+      instituteName: user.instituteName || 'Dot X Learner Platform',
+      rollNumber: user.rollNumber || '',
+      department: user.department || '',
+      bio: user.bio || '',
+      status: user.status,
+      createdAt: user.createdAt
+    }
+  });
+});
+
 // Change Password
 router.post('/change-password', requireAuth, (req: AuthenticatedRequest, res: Response) => {
   const { currentPassword, newPassword } = req.body;

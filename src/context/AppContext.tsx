@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { api, getSelectedInstituteId, setSelectedInstituteId as persistInstituteId } from '../services/api.js';
 import { playNotificationTune, getActiveNotificationTune } from '../services/soundService.js';
 import { Institute } from '../types/index.js';
+import { DirectParticipant } from '../services/firestoreService.js';
 
 export type PageId =
   | 'home'
@@ -23,6 +24,8 @@ export type PageId =
   | 'about'
   | 'profile'
   | 'settings'
+  | 'job-profile'
+  | 'jobs'
   // Admin pages
   | 'admin-dashboard'
   | 'admin-institutes'
@@ -55,13 +58,25 @@ export interface ToastMessage {
   message: string;
 }
 
+export interface ActivePrivateChatSession {
+  recipient: DirectParticipant;
+  initialMessage?: string;
+  jobContext?: {
+    jobId?: string;
+    jobTitle?: string;
+    companyOrInstitute?: string;
+  };
+}
+
 interface AppContextType {
   currentPage: PageId;
-  navigateTo: (page: PageId, options?: { bookId?: string; meetingId?: string; searchQuery?: string }) => void;
+  navigateTo: (page: PageId, options?: { bookId?: string; meetingId?: string; searchQuery?: string; jobId?: string }) => void;
   selectedBookId: string | null;
   setSelectedBookId: (id: string | null) => void;
   selectedMeetingId: string | null;
   setSelectedMeetingId: (id: string | null) => void;
+  selectedJobId: string | null;
+  setSelectedJobId: (id: string | null) => void;
   globalSearchQuery: string;
   setGlobalSearchQuery: (query: string) => void;
   isMobileSimulator: boolean;
@@ -77,6 +92,10 @@ interface AppContextType {
   authModalMode: 'login' | 'register' | 'forgot';
   openAuthModal: (mode?: 'login' | 'register' | 'forgot') => void;
   closeAuthModal: () => void;
+  // Facebook-Style Real-Time Private Chat Window State
+  activePrivateChat: ActivePrivateChatSession | null;
+  openPrivateChat: (recipient: DirectParticipant, options?: { initialMessage?: string; jobContext?: any }) => void;
+  closePrivateChat: () => void;
   // Institute Scoping
   selectedInstituteId: string;
   selectedInstitute: Institute | null;
@@ -100,6 +119,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentPage, setCurrentPage] = useState<PageId>(initialPage);
   const [selectedBookId, setSelectedBookId] = useState<string | null>(urlParams?.get('bookId') || 'book_python_prog');
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(initialMeetingId);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(urlParams?.get('jobId') || 'job_ai_research_fellow');
+  const [activePrivateChat, setActivePrivateChat] = useState<ActivePrivateChatSession | null>(null);
   const [globalSearchQuery, setGlobalSearchQuery] = useState<string>('');
   const [isMobileSimulator, setIsMobileSimulator] = useState<boolean>(false);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(3);
@@ -107,6 +128,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [authModalOpen, setAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot'>('login');
+
+  const openPrivateChat = (recipient: DirectParticipant, options?: { initialMessage?: string; jobContext?: any }) => {
+    setActivePrivateChat({
+      recipient,
+      initialMessage: options?.initialMessage,
+      jobContext: options?.jobContext
+    });
+  };
+
+  const closePrivateChat = () => {
+    setActivePrivateChat(null);
+  };
 
   // Institute Multi-Tenant Context State
   const [selectedInstituteId, setSelectedInstituteIdState] = useState<string>(() => getSelectedInstituteId() || 'inst_dotx');
@@ -203,7 +236,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(interval);
   }, []);
 
-  const navigateTo = (page: PageId, options?: { bookId?: string; meetingId?: string; searchQuery?: string }) => {
+  const navigateTo = (page: PageId, options?: { bookId?: string; meetingId?: string; searchQuery?: string; jobId?: string }) => {
     if (page === 'login') {
       setAuthModalMode('login');
       setAuthModalOpen(true);
@@ -219,6 +252,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (options?.bookId) setSelectedBookId(options.bookId);
     if (options?.meetingId) setSelectedMeetingId(options.meetingId);
+    if (options?.jobId) setSelectedJobId(options.jobId);
     if (options?.searchQuery !== undefined) setGlobalSearchQuery(options.searchQuery);
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -237,6 +271,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setSelectedBookId,
         selectedMeetingId,
         setSelectedMeetingId,
+        selectedJobId,
+        setSelectedJobId,
         globalSearchQuery,
         setGlobalSearchQuery,
         isMobileSimulator,
@@ -252,6 +288,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         authModalMode,
         openAuthModal,
         closeAuthModal,
+        activePrivateChat,
+        openPrivateChat,
+        closePrivateChat,
         selectedInstituteId,
         selectedInstitute,
         institutes,
